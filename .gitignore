@@ -1,0 +1,26 @@
+.venv/
+.cache/
+.tools/
+.env
+data/
+node_modules/
+dist/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+*.tsbuildinfo
+test-results/
+playwright-report/
+.codegraph/
+
+# Local agent memory, editor configuration and internal planning material.
+.ai/
+.cursor/
+.codex/
+.agents/
+AGENTS.md
+AFDS_Architecture_and_Implementation_Spec_v0.1.md
+docs/SPEC.md
+docs/DECISIONS.md
+docs/PROGRESS.md

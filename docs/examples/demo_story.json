@@ -1,0 +1,6 @@
+{
+  "title": "雨夜告别 · Mock Demo",
+  "brief": "在雨夜的车站，一位旅人向旧日告别。以建立环境、人物进入、情绪转折和留白组成四镜头短片。",
+  "format": {"fps_num": 24, "fps_den": 1, "width": 1280, "height": 720},
+  "style_bible": {"visual_style": "cool tones", "tone": "quiet farewell"}
+}
