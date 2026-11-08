@@ -2,6 +2,7 @@
 
 import ipaddress
 import os
+from decimal import Decimal
 from typing import Literal
 from urllib.parse import unquote, urlsplit
 
@@ -81,6 +82,8 @@ class ProviderConfig(Schema):
     video_timeout_seconds: int = Field(default=900, ge=30, le=3600)
     image_size: str = Field(default="1024x1024", pattern=r"^(auto|\d{2,4}x\d{2,4})$")
     speech_voice: str = Field(default="alloy", min_length=1, max_length=100)
+    request_cost: Decimal | None = Field(default=None, ge=0, le=1_000_000_000, decimal_places=6)
+    cost_currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
 
     @model_validator(mode="after")
     def valid_config(self):
@@ -183,7 +186,7 @@ class ProviderStore:
                     existing_key = ""
                 if existing_key != key:
                     secret = cipher.encrypt(key.encode()).decode()
-            config = body.model_dump(exclude={"api_key", "clear_api_key"})
+            config = body.model_dump(mode="json", exclude={"api_key", "clear_api_key"})
             if old and config == old["config"] and secret == old["secret"]:
                 return self.public(kind, old)
             config["revision"] = revision + 1
@@ -247,7 +250,7 @@ class ProviderStore:
             except DomainError as error:
                 if error.code != "MODEL_UNAVAILABLE":
                     raise
-        config = body.model_dump(exclude={"api_key", "clear_api_key"})
+        config = body.model_dump(mode="json", exclude={"api_key", "clear_api_key"})
         return {**config, "kind": kind, "api_key": key}
 
     def set_defaults(self, body: DefaultUpdate):

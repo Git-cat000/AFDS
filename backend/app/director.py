@@ -49,6 +49,7 @@ class MockDirector:
 
 
 def propose(engine, project_id, body):
+    from app.budget import BudgetService
     from app.llm_adapter import propose_story
     from app.provider_settings import ProviderStore
 
@@ -57,6 +58,7 @@ def propose(engine, project_id, body):
     if provider_id not in {"mock-director", "openai-llm"}:
         raise DomainError("MODEL_UNAVAILABLE", "Unknown director provider", 422)
     config = None
+    charge_id = None
     if provider_id == "openai-llm":
         if not body.allow_remote:
             raise DomainError(
@@ -70,6 +72,9 @@ def propose(engine, project_id, body):
         apr = engine.load(connection, project_id)
         engine.check_revision(apr, body.base_revision)
         if config:
+            charge_id = BudgetService(engine.database).reserve(
+                connection, apr, f"llm:{new_id()}", config
+            )
             engine.approve(
                 connection,
                 project_id,
@@ -80,11 +85,20 @@ def propose(engine, project_id, body):
                     "cost_status": "unknown",
                 },
             )
-    plan = (
-        propose_story(config, apr, body.message)
-        if config
-        else MockDirector().propose(apr, body.message)
-    )
+    submitted = True
+    try:
+        plan = (
+            propose_story(config, apr, body.message)
+            if config
+            else MockDirector().propose(apr, body.message)
+        )
+    except DomainError as error:
+        submitted = not getattr(error, "rejected", False)
+        raise
+    finally:
+        if charge_id:
+            with engine.database.transaction() as connection:
+                BudgetService(engine.database).finalize(connection, charge_id, submitted)
     with engine.database.transaction() as connection:
         engine.check_revision(engine.load(connection, project_id), body.base_revision)
         connection.execute(

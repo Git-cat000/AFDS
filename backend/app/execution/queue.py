@@ -161,7 +161,20 @@ class Queue:
             payload.update(
                 estimated_cost=unknown, actual_cost=unknown, remote_cancel_supported=False
             )
+            config = request["provider_config"]
+            if config.get("request_cost") is not None:
+                payload["estimated_cost"] = {
+                    "status": "estimated",
+                    "amount": config["request_cost"],
+                    "currency": config.get("cost_currency", "USD"),
+                }
         jid = new_id()
+        if request.get("provider_config"):
+            from app.budget import BudgetService
+
+            payload["budget_entry_id"] = BudgetService(self.database).reserve(
+                connection, apr, f"job:{jid}", request["provider_config"]
+            )
         connection.execute(
             insert(db.jobs).values(
                 id=jid,
@@ -373,6 +386,12 @@ class Queue:
             select(db.jobs.c.payload).where(db.jobs.c.id == job["id"])
         ).scalar_one()
         payload = {**row, **payload_updates}
+        if target in TERMINAL:
+            from app.budget import BudgetService
+
+            BudgetService(self.database).finalize(
+                connection, payload.get("budget_entry_id"), bool(payload.get("submission_started"))
+            )
         values = {"state": target, "payload": payload}
         if target in TERMINAL or target in {"queued", "retry_wait"}:
             values.update(lease_owner=None, lease_expires_at=None)
@@ -503,6 +522,23 @@ class Queue:
                     "REMOTE_CONSENT_REQUIRED", "A new remote request can incur another charge", 409
                 )
             fields = {}
+            if remote:
+                from app.budget import BudgetService
+
+                service = BudgetService(self.database)
+                apr = self.engine.load(connection, project_id)
+                reference = f"job:{job['id']}"
+                if job.get("budget_entry_id"):
+                    reference = connection.execute(
+                        select(db.cost_entries.c.reference).where(
+                            db.cost_entries.c.id == job["budget_entry_id"]
+                        )
+                    ).scalar_one()
+                if restarting:
+                    reference = f"job:{job['id']}:{new_id()}"
+                fields["budget_entry_id"] = service.reserve(
+                    connection, apr, reference, job["request"]["provider_config"]
+                )
             if restarting:
                 attempts = list(job.get("remote_attempts", []))
                 attempts.append(

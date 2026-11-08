@@ -146,6 +146,15 @@ preferences = Table(
     Column("payload", JSON, nullable=False),
 )
 
+cost_entries = Table(
+    "cost_entries",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("project_id", ForeignKey("projects.id"), nullable=False, index=True),
+    Column("reference", String, nullable=False, unique=True),
+    Column("payload", JSON, nullable=False),
+)
+
 
 class Database:
     def __init__(self, settings: Settings):

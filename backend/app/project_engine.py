@@ -102,6 +102,10 @@ class ProjectEngine:
             ]
         apr["scenes"].sort(key=lambda s: s["order"])
         apr["shots"].sort(key=lambda s: s["order"])
+        from app.budget import BudgetService
+
+        finance = BudgetService(self.database).summary(connection, apr)
+        apr["budget"].update(spent=finance["spent"], reserved=finance["reserved"])
         return apr
 
     def read(self, project_id):

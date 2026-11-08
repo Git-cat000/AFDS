@@ -91,6 +91,9 @@ def create_app(settings: Settings | None = None):
     from app.provider_api import router as provider_router
 
     application.include_router(provider_router, prefix="/api/v1")
+    from app.budget_api import router as budget_router
+
+    application.include_router(budget_router, prefix="/api/v1")
     return application
 
 

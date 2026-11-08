@@ -49,11 +49,14 @@ def prompt_for_shot(request):
 
 
 def execute_remote_media(queue, job, owner, work, checkpoint):
+    from app.budget import BudgetService
+
     snapshot = job["request"]["provider_config"]
     store = ProviderStore(queue.database)
     if not store.runtime(snapshot["kind"])["enabled"]:
         raise DomainError("MODEL_UNAVAILABLE", "Provider was disabled in settings", 422)
     config = store.runtime(snapshot["kind"], snapshot["revision"])
+    BudgetService(queue.database).enforce(queue.engine.read(job["project_id"]), config)
     transport = ProviderHTTP(config)
     settings = queue.database.settings
 
