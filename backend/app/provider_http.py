@@ -58,6 +58,7 @@ class ProviderHTTP:
         *,
         payload=None,
         multipart=None,
+        params=None,
         output=None,
         external_url=None,
         checkpoint=lambda: True,
@@ -68,8 +69,12 @@ class ProviderHTTP:
 
             raise Cancelled()
         url = external_url or f"{self.config['base_url']}/{path.lstrip('/')}"
+        if params is not None:
+            url = str(httpx.URL(url, params=params))
         private = self.config["allow_private_network"] if external_url is None else False
-        address = check_destination(url, private, allow_query=external_url is not None)
+        address = check_destination(
+            url, private, allow_query=external_url is not None or params is not None
+        )
         original = httpx.URL(url)
         pinned_url = original.copy_with(host=address)
         headers = {"Host": original.netloc.decode("ascii")}

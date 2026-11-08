@@ -32,6 +32,7 @@ import { useStudio } from "./store";
 import { ProviderSettings } from "./ProviderSettings";
 import { AuxiliaryMedia } from "./AuxiliaryMedia";
 import { RemoteJobRecovery } from "./RemoteJobRecovery";
+import { ProjectBudget } from "./ProjectBudget";
 import type {
   ChangeSet,
   Job,
@@ -261,7 +262,7 @@ export function App() {
         </button>
         <div className="rail-bottom">
           <span className="online-dot" />
-          本地工作区<small>v0.2 · FILM STUDIO</small>
+          本地工作区<small>v0.3 · FILM STUDIO</small>
         </div>
       </aside>
       <main className="workspace">
@@ -426,11 +427,19 @@ export function App() {
                         <option
                           key={p.provider_id}
                           value={p.provider_id}
-                          disabled={p.availability !== "available"}
+                          disabled={
+                            !["available", "unverified"].includes(
+                              p.availability,
+                            )
+                          }
                         >
                           {p.display_name}
                           {p.model_id ? ` · ${p.model_id}` : ""}
-                          {p.availability !== "available" ? "（未启用）" : ""}
+                          {p.availability === "unverified"
+                            ? "（待生成验证）"
+                            : p.availability !== "available"
+                              ? "（未启用）"
+                              : ""}
                         </option>
                       ))}
                   </select>
@@ -446,16 +455,29 @@ export function App() {
                     }}
                   >
                     {providers.data
-                      ?.filter((p) => p.capabilities.includes("text_to_video"))
+                      ?.filter((p) =>
+                        [
+                          ...p.capabilities,
+                          ...(p.provisional_capabilities || []),
+                        ].includes("text_to_video"),
+                      )
                       .map((p) => (
                         <option
                           key={p.provider_id}
                           value={p.provider_id}
-                          disabled={p.availability !== "available"}
+                          disabled={
+                            !["available", "unverified"].includes(
+                              p.availability,
+                            )
+                          }
                         >
                           {p.display_name}
                           {p.model_id ? ` · ${p.model_id}` : ""}
-                          {p.availability !== "available" ? "（未启用）" : ""}
+                          {p.availability === "unverified"
+                            ? "（待生成验证）"
+                            : p.availability !== "available"
+                              ? "（未启用）"
+                              : ""}
                         </option>
                       ))}
                   </select>
@@ -669,6 +691,11 @@ export function App() {
                   <h2>任务与执行记录</h2>
                   <span className="muted">{activeJobs.length} 个活动任务</span>
                 </div>
+                <ProjectBudget
+                  projectId={apr.project_id}
+                  run={run}
+                  busy={busy}
+                />
                 {!jobs.data?.length && (
                   <p className="muted">生成镜头后，执行记录会出现在这里。</p>
                 )}

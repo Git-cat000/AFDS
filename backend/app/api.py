@@ -298,14 +298,27 @@ def models(request: Request):
 
     result = providers(request.app.state.settings)
     for config in ProviderStore(request.app.state.database).list()["providers"]:
+        verified = config.get("protocol") != "comfyui" or (
+            config["health"]["status"] == "connected"
+            and config["health"].get("generation_tested", False)
+        )
         result.append(
             {
                 "provider_id": config["provider_id"],
                 "display_name": config["display_name"],
                 "backend_type": "remote",
-                "availability": "available" if config["enabled"] else "disabled",
-                "capabilities": [CAPABILITIES[config["kind"]]],
-                "pricing": {"mode": "unknown"},
+                "availability": ("available" if verified else "unverified")
+                if config["enabled"]
+                else "disabled",
+                "capabilities": [CAPABILITIES[config["kind"]]] if verified else [],
+                "provisional_capabilities": [] if verified else [CAPABILITIES[config["kind"]]],
+                "protocol": config.get("protocol", "openai-compatible"),
+                "health": config["health"],
+                "pricing": {
+                    "mode": "estimated" if config.get("request_cost") is not None else "unknown",
+                    "amount": config.get("request_cost"),
+                    "currency": config.get("cost_currency", "USD"),
+                },
                 "adapter_version": "0.2.0",
                 "model_id": config["model"],
             }

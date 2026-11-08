@@ -342,7 +342,10 @@ class Queue:
             )
         with self.database.transaction() as connection:
             job = self.get(connection, project_id, job_id)
-            if job["operation"] != "generate_video" or job["provider_id"] != "openai-video":
+            if (
+                job["operation"] != "generate_video"
+                and job["request"].get("provider_config", {}).get("protocol") != "comfyui"
+            ):
                 raise DomainError(
                     "CAPABILITY_UNSUPPORTED", "Remote recovery supports video jobs", 422
                 )
@@ -350,12 +353,18 @@ class Queue:
                 raise DomainError(
                     "INVALID_JOB_TRANSITION", "Stop the local job before recovery", 409
                 )
+            from app.budget import BudgetService
+
+            entry_id = BudgetService(self.database).restore_obligation(
+                connection, self.engine.load(connection, project_id), job
+            )
             self.set_state(
                 connection,
                 job,
                 "queued",
                 external_task_id=body.external_task_id,
                 submission_started=True,
+                budget_entry_id=entry_id,
                 error=None,
             )
             connection.execute(
@@ -551,6 +560,7 @@ class Queue:
                 fields.update(
                     external_task_id=None,
                     submission_started=False,
+                    generation_accepted=False,
                     remote_notice=None,
                     remote_attempts=attempts,
                 )
@@ -574,7 +584,13 @@ class Queue:
     def fail(self, job, owner, code, message, transient=False):
         with self.database.transaction() as connection:
             current = self.get(connection, job["project_id"], job["id"])
-            if current["lease_owner"] != owner:
+            if (
+                current["lease_owner"] != owner
+                or current["attempt"] != job["attempt"]
+                or current["lease_expires_at"] is None
+                or current["lease_expires_at"] < time.time()
+                or current["state"] not in ACTIVE
+            ):
                 return
             if current["state"] == "cancel_requested":
                 self.set_state(connection, current, "cancelled")

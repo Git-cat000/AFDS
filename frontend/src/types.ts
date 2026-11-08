@@ -90,6 +90,7 @@ export type Provider = {
   display_name: string;
   availability: string;
   capabilities: string[];
+  provisional_capabilities?: string[];
   pricing: { mode: string };
   adapter_version: string;
   model_id?: string;
@@ -114,6 +115,57 @@ export type Connection = {
   video_timeout_seconds: number;
   image_size: string;
   speech_voice: string;
+  protocol?: "openai-compatible" | "comfyui";
+  workflow?: WorkflowTemplate | null;
+  request_cost?: string | null;
+  cost_currency?: string;
+  health?: {
+    status: string;
+    checked_at?: number;
+    error_code?: string;
+    generation_tested: boolean;
+  };
+};
+export type WorkflowTemplate = {
+  graph: Record<
+    string,
+    {
+      class_type: string;
+      inputs: Record<string, unknown>;
+      _meta?: { title?: string };
+    }
+  >;
+  bindings: Partial<
+    Record<
+      "prompt" | "seed" | "width" | "height" | "frames" | "fps",
+      { node_id: string; input_name: string }
+    >
+  >;
+  output_node: string;
+  output_field: "images" | "gifs" | "videos";
+  media_type: "image" | "video";
+  seed: number;
+};
+export type ProjectBudgetState = {
+  revision: number;
+  budget_limit: string;
+  currency: string;
+  spent: string;
+  reserved: string;
+  allow_remote: boolean;
+  allow_unknown_cost: boolean;
+  unknown_count: number;
+  over_budget: boolean;
+  entries: {
+    id: string;
+    reference: string;
+    provider_id: string;
+    state: string;
+    estimate: string | null;
+    actual: string | null;
+    currency: string;
+    can_reconcile?: boolean;
+  }[];
 };
 export type ModelSettings = {
   providers: Connection[];

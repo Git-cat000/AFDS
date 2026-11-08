@@ -123,6 +123,10 @@ class ProjectEngine:
 
     def save(self, connection, apr, before, reason, author="user"):
         apr = validate(apr)
+        from app.budget import BudgetService
+
+        finance = BudgetService(self.database).summary(connection, apr)
+        apr["budget"].update(spent=finance["spent"], reserved=finance["reserved"])
         pid = apr["project_id"]
         payload = {
             k: v for k, v in apr.items() if k not in {"scenes", "shots", "assets", "asset_versions"}

@@ -43,6 +43,23 @@ export async function api<T>(
   const data = await response.json();
   if (!response.ok) {
     const messages: Record<string, string> = {
+      BUDGET_EXCEEDED:
+        "预估费用超过项目剩余预算，请在任务页调整预算或减少生成数量。",
+      UNKNOWN_COST_BLOCKED:
+        "本项目禁止未知费用，请设置单次预估费用或修改预算策略。",
+      PROJECT_REMOTE_BLOCKED:
+        "本项目禁止向外部模型服务发送内容，请在任务页检查隐私设置。",
+      BUDGET_CURRENCY_MISMATCH:
+        "预估费用币种与项目预算不一致，请核对连接设置。",
+      BUDGET_CURRENCY_LOCKED: "已有费用记录，项目币种不能更改。",
+      CHARGE_NOT_PENDING:
+        "仅可对已结束、待核对的请求确认实际费用，且不能重复对账。",
+      CHARGE_REQUEST_ACTIVE: "请求仍在时限内，请等待完成或超时后再核对费用。",
+      WORKFLOW_REQUIRED: "请先导入 ComfyUI API 格式工作流。",
+      WORKFLOW_NODE_MISSING:
+        "ComfyUI 缺少工作流需要的节点，请在服务端安装或调整工作流。",
+      WORKFLOW_OUTPUT_INVALID: "所选节点不是保存输出节点，请重新选择。",
+      WORKFLOW_INPUT_INVALID: "映射字段与服务端节点不一致，请核对工作流。",
       PROVIDER_AUTH_FAILED: "鉴权失败，请检查 API Key 与账号权限。",
       PROVIDER_ENDPOINT_UNSUPPORTED:
         "服务未提供此接口，请检查 URL 版本前缀和兼容协议。",

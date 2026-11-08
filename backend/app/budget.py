@@ -52,6 +52,10 @@ class BudgetService:
     def summary(self, connection, apr):
         policy = apr["budget"]
         entries = self.entries(connection, apr["project_id"])
+        if any(e["payload"]["currency"] != policy.get("currency", "USD") for e in entries):
+            raise DomainError(
+                "BUDGET_CURRENCY_LOCKED", "Ledger currency must match project currency", 409
+            )
         spent = sum(e["payload"].get("actual_micros", 0) or 0 for e in entries)
         reserved = sum(
             (e["payload"].get("estimate_micros") or 0)
@@ -72,6 +76,8 @@ class BudgetService:
                     "id": entry["id"],
                     "reference": entry["reference"],
                     **item,
+                    "can_reconcile": item["state"] == "pending"
+                    and item.get("reconcile_after", 0) <= time.time(),
                     "estimate": money(item["estimate_micros"])
                     if item["estimate_micros"] is not None
                     else None,
@@ -169,6 +175,75 @@ class BudgetService:
         emit(connection, apr["project_id"], "budget.reserved", {"entry_id": entry_id})
         return entry_id
 
+    def begin_submission(self, connection, entry_id, timeout_seconds):
+        row = (
+            connection.execute(select(db.cost_entries).where(db.cost_entries.c.id == entry_id))
+            .mappings()
+            .one()
+        )
+        payload = {
+            **row["payload"],
+            "state": "pending",
+            "submission_started_at": time.time(),
+            "reconcile_after": time.time() + timeout_seconds + 15,
+        }
+        connection.execute(
+            update(db.cost_entries).where(db.cost_entries.c.id == entry_id).values(payload=payload)
+        )
+        emit(connection, row["project_id"], "budget.submission_started", {"entry_id": entry_id})
+
+    def restore_obligation(self, connection, apr, job):
+        entry_id = job.get("budget_entry_id")
+        row = (
+            connection.execute(select(db.cost_entries).where(db.cost_entries.c.id == entry_id))
+            .mappings()
+            .first()
+            if entry_id
+            else None
+        )
+        if row and row["payload"]["state"] in {"pending", "settled"}:
+            return row["id"]
+        config = job["request"]["provider_config"]
+        if row:
+            payload = {**row["payload"], "state": "pending"}
+            entry_id = row["id"]
+            connection.execute(
+                update(db.cost_entries)
+                .where(db.cost_entries.c.id == entry_id)
+                .values(payload=payload)
+            )
+        else:
+            currency = config.get("cost_currency", "USD")
+            if currency != apr["budget"]["currency"]:
+                raise DomainError(
+                    "BUDGET_CURRENCY_MISMATCH", "Use the original remote charge currency", 409
+                )
+            entry_id = new_id()
+            estimate = config.get("request_cost")
+            payload = {
+                "state": "pending",
+                "estimate_micros": micros(estimate) if estimate is not None else None,
+                "actual_micros": None,
+                "currency": currency,
+                "provider_id": job["provider_id"],
+                "created_at": time.time(),
+            }
+            connection.execute(
+                insert(db.cost_entries).values(
+                    id=entry_id,
+                    project_id=apr["project_id"],
+                    reference=f"job:{job['id']}",
+                    payload=payload,
+                )
+            )
+        emit(
+            connection,
+            apr["project_id"],
+            "budget.remote_obligation_restored",
+            {"entry_id": entry_id},
+        )
+        return entry_id
+
     def finalize(self, connection, entry_id, submitted):
         if not entry_id:
             return
@@ -177,9 +252,13 @@ class BudgetService:
             .mappings()
             .one()
         )
-        if row["payload"]["state"] != "reserved":
+        if row["payload"]["state"] not in {"reserved", "pending"}:
             return
-        payload = {**row["payload"], "state": "pending" if submitted else "released"}
+        payload = {
+            **row["payload"],
+            "state": "pending" if submitted else "released",
+            "reconcile_after": 0,
+        }
         connection.execute(
             update(db.cost_entries).where(db.cost_entries.c.id == entry_id).values(payload=payload)
         )
@@ -214,6 +293,12 @@ class BudgetService:
                 raise DomainError(
                     "CHARGE_NOT_PENDING",
                     "Only terminal pending charges can be reconciled once",
+                    409,
+                )
+            if payload.get("reconcile_after", 0) > time.time():
+                raise DomainError(
+                    "CHARGE_REQUEST_ACTIVE",
+                    "Wait for the request timeout before reconciling an interrupted call",
                     409,
                 )
             if body.currency != payload["currency"]:

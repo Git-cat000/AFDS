@@ -27,5 +27,19 @@ def test_provider(kind: ProviderKind, request: Request, body: ProviderUpdate | N
 
     if body is not None and not body.base_url:
         body = None
-    config = ProviderStore(request.app.state.database).preview_runtime(kind, body)
-    return ProviderHTTP(config).models()
+    store = ProviderStore(request.app.state.database)
+    config = store.preview_runtime(kind, body)
+    from app.errors import DomainError
+
+    try:
+        if config.get("protocol") == "comfyui":
+            from app.comfy_adapter import validate_workflow
+
+            result = validate_workflow(config)
+        else:
+            result = ProviderHTTP(config).models()
+    except DomainError as error:
+        store.record_health(config, error=error.code)
+        raise
+    store.record_health(config, result)
+    return result

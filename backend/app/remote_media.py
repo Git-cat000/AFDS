@@ -66,7 +66,11 @@ def execute_remote_media(queue, job, owner, work, checkpoint):
     if not checkpoint():
         raise Cancelled()
     try:
-        if job["operation"] == "generate_video":
+        if config.get("protocol") == "comfyui":
+            from app.comfy_adapter import generate_comfy
+
+            result = generate_comfy(transport, config, job, work, checkpoint, persist, settings)
+        elif job["operation"] == "generate_video":
             result = generate_video(transport, config, job, work, checkpoint, persist, settings)
         else:
             if job.get("submission_started"):
@@ -77,7 +81,14 @@ def execute_remote_media(queue, job, owner, work, checkpoint):
                 )
             persist(submission_started=True)
             if job["operation"] == "generate_image":
-                result = generate_image(transport, config, job["request"], work, checkpoint)
+                result = generate_image(
+                    transport,
+                    config,
+                    job["request"],
+                    work,
+                    checkpoint,
+                    lambda: persist(generation_accepted=True),
+                )
             else:
                 result = generate_speech(
                     transport, config, job["request"], work, checkpoint, settings
@@ -85,12 +96,21 @@ def execute_remote_media(queue, job, owner, work, checkpoint):
         result["is_mock"] = False
         return result
     except ProviderError as error:
-        if job["operation"] != "generate_video" and error.code in {
-            "PROVIDER_OUTPUT_INVALID",
-            "PROVIDER_OUTPUT_TOO_LARGE",
-        }:
+        if (
+            config.get("protocol") != "comfyui"
+            and job["operation"] != "generate_video"
+            and error.code
+            in {
+                "PROVIDER_OUTPUT_INVALID",
+                "PROVIDER_OUTPUT_TOO_LARGE",
+            }
+        ):
             raise
-        if error.rejected and not job.get("external_task_id"):
+        if (
+            error.rejected
+            and not job.get("external_task_id")
+            and not job.get("generation_accepted")
+        ):
             persist(submission_started=False)
         elif job.get("submission_started") and not job.get("external_task_id"):
             raise ProviderError(
@@ -166,9 +186,12 @@ def generate_video(transport, config, job, work, checkpoint, persist, settings):
         checkpoint=checkpoint,
         limit=128 * 1024 * 1024,
     )
+    return normalize_video(settings, job["request"], source, work, checkpoint)
+
+
+def normalize_video(settings, request, source, work, checkpoint):
     original = probe(settings, source)
     output = work / "output.mp4"
-    request = job["request"]
     metadata = render(
         settings,
         {"format": request["format"], "items": [{"duration_frames": request["duration_frames"]}]},
@@ -201,7 +224,7 @@ def generate_video(transport, config, job, work, checkpoint, persist, settings):
     }
 
 
-def generate_image(transport, config, request, work, checkpoint):
+def generate_image(transport, config, request, work, checkpoint, accepted=lambda: None):
     response = transport.json(
         "POST",
         "images/generations",
@@ -213,6 +236,7 @@ def generate_image(transport, config, request, work, checkpoint):
         },
         checkpoint=checkpoint,
     )
+    accepted()
     try:
         first = response["data"][0]
         if not isinstance(first, dict):

@@ -1,3 +1,4 @@
+from decimal import Decimal
 from fractions import Fraction
 from typing import Any, Literal
 from uuid import UUID, uuid4
@@ -137,6 +138,15 @@ class Location(Schema):
     reference_asset_ids: list[UUID] = Field(default_factory=list)
 
 
+class BudgetPolicy(Schema):
+    budget_limit: Decimal = Field(default=Decimal(0), ge=0, le=1_000_000_000, decimal_places=6)
+    spent: Decimal = Field(default=Decimal(0), ge=0, decimal_places=6)
+    reserved: Decimal = Field(default=Decimal(0), ge=0, decimal_places=6)
+    currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
+    allow_remote: bool = True
+    allow_unknown_cost: bool = True
+
+
 class APR(ProjectCreate):
     apr_schema_version: Literal["0.1.0"] = "0.1.0"
     project_id: UUID = Field(default_factory=uuid4)
@@ -164,6 +174,11 @@ class APR(ProjectCreate):
     @classmethod
     def validate_assets(cls, values):
         return [Asset.model_validate(value).model_dump(mode="json") for value in values]
+
+    @field_validator("budget")
+    @classmethod
+    def validate_budget(cls, value):
+        return BudgetPolicy.model_validate(value).model_dump(mode="json")
 
     @field_validator("characters")
     @classmethod

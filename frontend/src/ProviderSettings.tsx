@@ -15,6 +15,7 @@ import {
 import { api } from "./api";
 import type { Connection, ModelSettings, ProviderKind } from "./types";
 import "./providers.css";
+import { ComfyWorkflowEditor } from "./ComfyWorkflowEditor";
 
 const categories = [
   {
@@ -181,7 +182,14 @@ function ConnectionForm({
   profile: Connection;
   saved: () => Promise<void>;
 }) {
-  const [draft, setDraft] = useState(profile);
+  const [draft, setDraft] = useState<Connection>({
+    ...profile,
+    protocol: profile.protocol || "openai-compatible",
+    workflow: profile.workflow || null,
+    request_cost: profile.request_cost ?? null,
+    cost_currency: profile.cost_currency || "USD",
+  });
+  const client = useQueryClient();
   const [key, setKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [clearKey, setClearKey] = useState(false);
@@ -213,6 +221,10 @@ function ConnectionForm({
       video_timeout_seconds: draft.video_timeout_seconds,
       image_size: draft.image_size,
       speech_voice: draft.speech_voice,
+      protocol: draft.protocol,
+      workflow: draft.workflow,
+      request_cost: draft.request_cost || null,
+      cost_currency: draft.cost_currency,
     };
   }
 
@@ -228,6 +240,7 @@ function ConnectionForm({
         );
         setModels(result.models);
         setMessage(result.message);
+        await client.invalidateQueries();
       } else {
         const result = await api<Connection>(
           `/settings/providers/${profile.kind}`,
@@ -256,13 +269,32 @@ function ConnectionForm({
           </div>
           <div>
             <h2>{category.label} 接口</h2>
-            <p className="muted">OpenAI 兼容协议</p>
+            <p className="muted">
+              {draft.protocol === "comfyui"
+                ? "ComfyUI 工作流"
+                : "OpenAI 兼容协议"}
+            </p>
           </div>
           <span className={`status ${draft.enabled ? "status-ready" : ""}`}>
             {draft.enabled ? "已启用" : "未启用"}
           </span>
         </header>
-        {profile.kind === "video" && (
+        {(profile.kind === "video" || profile.kind === "image") && (
+          <label>
+            接口协议
+            <select
+              aria-label="接口协议"
+              value={draft.protocol}
+              onChange={(e) =>
+                patch("protocol", e.target.value as Connection["protocol"])
+              }
+            >
+              <option value="openai-compatible">OpenAI 兼容</option>
+              <option value="comfyui">ComfyUI</option>
+            </select>
+          </label>
+        )}
+        {profile.kind === "video" && draft.protocol !== "comfyui" && (
           <p className="protocol-note">
             OpenAI 官方视频服务已停止。请填写提供兼容 /videos 协议的第三方服务。
           </p>
@@ -315,7 +347,7 @@ function ConnectionForm({
           </small>
         </label>
         <label>
-          模型名称
+          {draft.protocol === "comfyui" ? "工作流名称" : "模型名称"}
           <input
             aria-label="模型名称"
             value={draft.model}
@@ -330,6 +362,22 @@ function ConnectionForm({
           </datalist>
           {models.length > 0 && <small>已发现 {models.length} 个模型</small>}
         </label>
+        {draft.protocol === "comfyui" && (
+          <ComfyWorkflowEditor
+            mediaType={profile.kind === "video" ? "video" : "image"}
+            value={draft.workflow || null}
+            onChange={(value) => patch("workflow", value)}
+          />
+        )}
+        <p className="muted">
+          连接检查：
+          {profile.health?.status === "connected"
+            ? "已通过"
+            : profile.health?.status === "failed"
+              ? `失败 ${profile.health.error_code || ""}`
+              : "尚未检查"}
+          。生成能力需运行任务验收。
+        </p>
         <label className="check-label">
           <input
             type="checkbox"
@@ -341,6 +389,29 @@ function ConnectionForm({
         <details className="connection-advanced">
           <summary>高级选项</summary>
           <div className="editor-grid">
+            <label>
+              单次请求预估费用
+              <input
+                aria-label="单次请求预估费用"
+                type="number"
+                min="0"
+                step="0.000001"
+                value={draft.request_cost ?? ""}
+                placeholder="留空表示未知"
+                onChange={(e) => patch("request_cost", e.target.value || null)}
+              />
+            </label>
+            <label>
+              预估费用币种
+              <input
+                aria-label="预估费用币种"
+                maxLength={3}
+                value={draft.cost_currency}
+                onChange={(e) =>
+                  patch("cost_currency", e.target.value.toUpperCase())
+                }
+              />
+            </label>
             <label>
               请求超时（秒）
               <input
@@ -484,11 +555,22 @@ function ConnectionForm({
         <p>保存服务信息后，在工作室选择对应模型即可使用。</p>
         <dl>
           <dt>请求端点</dt>
-          <dd>{category.path}</dd>
+          <dd>
+            {draft.protocol === "comfyui"
+              ? "/prompt → /history → /view"
+              : category.path}
+          </dd>
           <dt>连接测试</dt>
-          <dd>读取 /models，验证地址与鉴权。生成时会单独请求授权。</dd>
+          <dd>
+            {draft.protocol === "comfyui"
+              ? "读取 /object_info，核对节点和映射。"
+              : "读取 /models，验证地址与鉴权。"}
+            生成时会单独请求授权。
+          </dd>
           <dt>费用</dt>
-          <dd>按服务商计费，工作室显示“费用未知”。</dd>
+          <dd>
+            可填写单次预估费用用于预算预留；留空表示未知，实际费用在任务页核对。
+          </dd>
         </dl>
         {profile.kind === "video" && (
           <p>

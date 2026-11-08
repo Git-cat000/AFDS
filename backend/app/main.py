@@ -13,7 +13,7 @@ from app.errors import DomainError
 
 def create_app(settings: Settings | None = None):
     config = settings or Settings()
-    application = FastAPI(title="AFDS", version="0.2.0")
+    application = FastAPI(title="AFDS", version="0.3.0")
     application.state.settings = config
     from app.db import Database
 
@@ -83,7 +83,7 @@ def create_app(settings: Settings | None = None):
 
     @application.get("/api/v1/version")
     def version():
-        return {"version": "0.2.0", "apr_schema_version": "0.1.0"}
+        return {"version": "0.3.0", "apr_schema_version": "0.1.0"}
 
     from app.api import router
 

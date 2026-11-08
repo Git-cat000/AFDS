@@ -75,6 +75,9 @@ def propose(engine, project_id, body):
             charge_id = BudgetService(engine.database).reserve(
                 connection, apr, f"llm:{new_id()}", config
             )
+            BudgetService(engine.database).begin_submission(
+                connection, charge_id, config["timeout_seconds"]
+            )
             engine.approve(
                 connection,
                 project_id,

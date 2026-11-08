@@ -124,7 +124,12 @@ class Worker:
     def publish(self, job, result, elapsed_ms):
         with self.database.transaction() as connection:
             current = self.queue.get(connection, job["project_id"], job["id"])
-            if current["lease_owner"] != self.owner or current["lease_expires_at"] < time.time():
+            if (
+                current["lease_owner"] != self.owner
+                or current["attempt"] != job["attempt"]
+                or current["lease_expires_at"] is None
+                or current["lease_expires_at"] < time.time()
+            ):
                 return
             if current["state"] == "cancel_requested":
                 self.queue.set_state(connection, current, "cancelled")
@@ -142,6 +147,7 @@ class Worker:
                 "elapsed_ms": elapsed_ms,
                 "cost": job["actual_cost"],
                 "is_mock": result.get("is_mock", True),
+                "protocol": job["request"].get("provider_config", {}).get("protocol", "local"),
                 "quality": {"media_probe": "pass", "semantic_review": "not_run"},
             }
             if "normalization" in result:
@@ -163,6 +169,12 @@ class Worker:
                 result.get("media_type", "video"),
             )
             apr["assets"].append(asset)
+            if job["request"].get("provider_config", {}).get("protocol") == "comfyui":
+                from app.provider_settings import ProviderStore
+
+                ProviderStore(self.database).mark_media_verified(
+                    connection, job["request"]["provider_config"], asset["media_type"]
+                )
             output_ids = [asset["id"]]
             if job["operation"] == "generate_video":
                 poster = import_asset(

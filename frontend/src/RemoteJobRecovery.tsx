@@ -18,9 +18,14 @@ export function RemoteJobRecovery({
   return (
     <details className="remote-recovery">
       <summary>远端任务恢复与重新生成</summary>
-      {job.provider_id === "openai-video" && (
+      {(job.provider_id === "openai-video" ||
+        (job.request as { provider_config?: { protocol?: string } })
+          ?.provider_config?.protocol === "comfyui") && (
         <>
-          <p>从服务商控制台复制属于此镜头的任务 ID，继续查询和下载结果。</p>
+          <p>
+            复制属于本次生成的远端任务 ID 或 ComfyUI
+            prompt_id，继续查询和下载结果。
+          </p>
           <label>
             远端视频任务 ID
             <input value={taskId} onChange={(e) => setTaskId(e.target.value)} />

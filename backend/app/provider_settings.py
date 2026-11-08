@@ -2,6 +2,7 @@
 
 import ipaddress
 import os
+import time
 from decimal import Decimal
 from typing import Literal
 from urllib.parse import unquote, urlsplit
@@ -11,6 +12,7 @@ from pydantic import Field, SecretStr, model_validator
 from sqlalchemy import insert, select, update
 
 from app import db
+from app.comfy_schema import WorkflowTemplate
 from app.errors import DomainError
 from app.schemas import Schema
 
@@ -82,6 +84,8 @@ class ProviderConfig(Schema):
     video_timeout_seconds: int = Field(default=900, ge=30, le=3600)
     image_size: str = Field(default="1024x1024", pattern=r"^(auto|\d{2,4}x\d{2,4})$")
     speech_voice: str = Field(default="alloy", min_length=1, max_length=100)
+    protocol: Literal["openai-compatible", "comfyui"] = "openai-compatible"
+    workflow: WorkflowTemplate | None = None
     request_cost: Decimal | None = Field(default=None, ge=0, le=1_000_000_000, decimal_places=6)
     cost_currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
 
@@ -91,6 +95,8 @@ class ProviderConfig(Schema):
             self.base_url = validate_url(self.base_url, self.allow_private_network)
         if self.enabled and (not self.base_url or not self.model):
             raise ValueError("Enabled connections need a base URL and model")
+        if self.enabled and self.protocol == "comfyui" and self.workflow is None:
+            raise ValueError("ComfyUI needs an API-format workflow and node mappings")
         return self
 
 
@@ -132,14 +138,80 @@ class ProviderStore:
 
     def public(self, kind, row=None):
         config = row["config"] if row else self.default_config(kind)
+        label = "ComfyUI" if config.get("protocol") == "comfyui" else "OpenAI 兼容"
+        with self.database.engine.connect() as connection:
+            health = connection.execute(
+                select(db.preferences.c.payload).where(
+                    db.preferences.c.id == f"provider-health:{kind}:{config['revision']}"
+                )
+            ).scalar_one_or_none()
         return {
             **config,
             "kind": kind,
             "provider_id": f"openai-{kind}",
             "has_api_key": bool(row and row["secret"]),
-            "protocol": "openai-compatible",
-            "display_name": f"OpenAI 兼容 {NAMES[kind]}",
+            "protocol": config.get("protocol", "openai-compatible"),
+            "display_name": f"{label} {NAMES[kind]}",
+            "health": health or {"status": "not_tested", "generation_tested": False},
         }
+
+    def record_health(self, config, result=None, error=None):
+        kind = config["kind"]
+        try:
+            current = self.runtime(kind)
+        except DomainError:
+            return
+        ignored = {"enabled", "kind", "provider_id"}
+        if {k: v for k, v in config.items() if k not in ignored} != {
+            k: v for k, v in current.items() if k not in ignored
+        }:
+            return
+        key = f"provider-health:{kind}:{current['revision']}"
+        payload = {
+            "status": "failed" if error else "connected",
+            "generation_tested": False,
+            "checked_at": time.time(),
+            "error_code": error,
+            "capabilities": (result or {}).get("capabilities", [CAPABILITIES[kind]])
+            if not error
+            else [],
+        }
+        with self.database.transaction() as connection:
+            previous = connection.execute(
+                select(db.preferences.c.payload).where(db.preferences.c.id == key)
+            ).scalar_one_or_none()
+            if previous and previous.get("generation_tested"):
+                payload.update(
+                    generation_tested=True, verified_media_type=previous.get("verified_media_type")
+                )
+            existing = connection.execute(
+                select(db.preferences.c.id).where(db.preferences.c.id == key)
+            ).first()
+            if existing:
+                connection.execute(
+                    update(db.preferences).where(db.preferences.c.id == key).values(payload=payload)
+                )
+            else:
+                connection.execute(insert(db.preferences).values(id=key, payload=payload))
+
+    def mark_media_verified(self, connection, config, media_type):
+        key = f"provider-health:{config['kind']}:{config['revision']}"
+        payload = {
+            "status": "connected",
+            "generation_tested": True,
+            "verified_media_type": media_type,
+            "checked_at": time.time(),
+            "capabilities": [f"text_to_{media_type}"],
+        }
+        exists = connection.execute(
+            select(db.preferences.c.id).where(db.preferences.c.id == key)
+        ).first()
+        if exists:
+            connection.execute(
+                update(db.preferences).where(db.preferences.c.id == key).values(payload=payload)
+            )
+        else:
+            connection.execute(insert(db.preferences).values(id=key, payload=payload))
 
     def list(self):
         with self.database.engine.connect() as connection:
@@ -153,6 +225,7 @@ class ProviderStore:
         }
 
     def save(self, kind, body: ProviderUpdate):
+        self.validate_protocol(kind, body)
         if kind == "video" and urlsplit(body.base_url).hostname == "api.openai.com":
             raise DomainError(
                 "PROVIDER_RETIRED",
@@ -236,9 +309,21 @@ class ProviderStore:
             )
         return {k: v for k, v in config.items() if k != "api_key"}
 
+    def validate_protocol(self, kind, body):
+        if body.protocol == "comfyui":
+            if kind not in {"video", "image"} or (
+                body.workflow and body.workflow.media_type != kind
+            ):
+                raise DomainError(
+                    "CAPABILITY_UNSUPPORTED",
+                    "Workflow media type does not match provider category",
+                    422,
+                )
+
     def preview_runtime(self, kind, body):
         if body is None:
             return self.runtime(kind)
+        self.validate_protocol(kind, body)
         if kind == "video" and urlsplit(body.base_url).hostname == "api.openai.com":
             raise DomainError(
                 "PROVIDER_RETIRED", "Configure a third-party compatible video service", 422

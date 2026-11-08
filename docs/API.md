@@ -1,4 +1,4 @@
-# AFDS v0.2 API
+# AFDS v0.3 API
 
 Base path is `/api/v1`. The development API is available at `http://127.0.0.1:8000`. Interactive schemas are at `/docs` and `/openapi.json`.
 
@@ -145,3 +145,29 @@ Advanced fields include `json_mode`, `video_seconds`, `video_size`, `video_poll_
 Provider errors include `PROVIDER_AUTH_FAILED`, `PROVIDER_URL_BLOCKED`, `PROVIDER_ENDPOINT_UNSUPPORTED`, `PROVIDER_RATE_LIMIT`, `PROVIDER_TIMEOUT`, `PROVIDER_OUTPUT_INVALID`, `PROVIDER_RETIRED`, `REMOTE_CONSENT_REQUIRED` and `REMOTE_SUBMISSION_UNCERTAIN`. Error bodies never echo upstream responses or API keys.
 
 Official OpenAI video generation was retired. The video adapter implements the historical `/videos` contract for explicitly configured third-party compatible services and rejects the retired official host. Other video protocols need a dedicated adapter.
+
+## ComfyUI and provider health
+
+Video/image profiles accept `protocol="comfyui"`, `model` as a template identifier and `workflow={graph,bindings,output_node,output_field,media_type,seed}`. `graph` is a complete runnable API-format workflow exported from ComfyUI (up to 300 nodes/2 MB). `bindings` maps required `prompt` and optional `seed,width,height,frames,fps` to `{node_id,input_name}`. Each maps to a distinct existing literal input. `media_type` must match the category; output fields are `images`, `gifs`, `videos`.
+
+Tests read `/object_info` for ComfyUI, `/models` otherwise. Metadata tests never generate and return `generation_tested=false`, with `provisional_capabilities` for ComfyUI. Settings include revision-specific `health` with `status=not_tested|connected|failed`, check time, sanitized error code and whether actual media was verified. ComfyUI `/models` capabilities stay empty/unverified until a fenced Worker publishes valid media from that revision; first-generation choices are explicitly provisional. The Worker revalidates the graph before submission.
+
+Provider IDs `openai-video`/`openai-image` remain stable for backward compatibility. `protocol` identifies ComfyUI in settings, requests and provenance. Worker uses `/prompt`, `/history/{prompt_id}`, `/view`; `/jobs/{jid}/remote` also restores ComfyUI image/video IDs. Cancellation never calls global `/interrupt` or clears a shared queue.
+
+## Project budget and accounting
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/projects/{pid}/budget` | Policy, revision, totals, unknown count and ledger entries |
+| PUT | `/projects/{pid}/budget` | `base_revision`, `budget_limit`, `currency`, `allow_remote`, `allow_unknown_cost` |
+| POST | `/projects/{pid}/budget/entries/{entry_id}` | `base_revision`, `approved=true`, `actual_amount`, original `currency`; reconcile one pending entry once |
+
+Profile fields `request_cost` (nullable non-negative Decimal) and `cost_currency` specify a user-supplied per-request estimate. Amounts allow six decimals, are stored as integer millionths, and totals are six-decimal strings. Mock has zero cost and no reservation.
+
+Entries transition `reserved` → `released` if no request was submitted, or → `pending` if submitted/possibly accepted. Explicit billing reconciliation makes an entry `settled`. Intentional resubmission retains previous entries and creates a fresh reservation; cache reuse and remote-ID resume do not reserve twice. Batch reservations and enqueueing are atomic.
+
+LLM submission intent is persisted as pending before the network call. A crash leaves a durable entry; `can_reconcile` becomes true after the request timeout plus 15 seconds (or normal completion). Known remote-ID recovery restores a released obligation even when the cap is exceeded, since the accepted task may already have incurred that cost. Budget currency invariants also apply to revision revert.
+
+Policy edits and reconciliation use engine revision checks and ownership checks. Currency is fixed after the first ledger entry. Actual charges may exceed the cap and are still recorded; `over_budget` flags this. Unknown costs cannot be bounded by the numeric limit; both project permission and per-request remote consent are required. Estimates never become actual charges automatically.
+
+Errors include `BUDGET_EXCEEDED`, `UNKNOWN_COST_BLOCKED`, `PROJECT_REMOTE_BLOCKED`, `BUDGET_CURRENCY_MISMATCH`, `BUDGET_CURRENCY_LOCKED`, `CHARGE_NOT_PENDING`. Real-service acceptance tests are opt-in and explicitly skipped when unconfigured; see README.

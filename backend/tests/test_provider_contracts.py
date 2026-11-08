@@ -67,7 +67,11 @@ def remote_server():
                     "usage": {"total_tokens": 100},
                 }
             elif self.path == "/v1/images/generations":
-                data = {"data": [{"b64_json": base64.b64encode(png.getvalue()).decode()}]}
+                data = (
+                    {"data": [{"url": state["image_url"]}]}
+                    if state.get("image_url")
+                    else {"data": [{"b64_json": base64.b64encode(png.getvalue()).decode()}]}
+                )
             elif self.path == "/v1/audio/speech":
                 data, content_type = wav.getvalue(), "audio/wav"
             elif self.path == "/v1/videos" and self.command == "POST":

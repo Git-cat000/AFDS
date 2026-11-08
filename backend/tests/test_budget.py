@@ -1,3 +1,4 @@
+import pytest
 from conftest import project, storyboard
 from test_provider_contracts import configure, remote_server  # noqa: F401
 from test_provider_settings import save_provider
@@ -133,6 +134,7 @@ def test_reconcile_requires_terminal_entry_revision_and_preserves_real_overrun(c
         service.finalize(connection, entry_id, True)
     response = client.post(path, json=body)
     assert response.status_code == 200, response.text
+    assert response.json()["budget"]["spent"] == "6.250000"
     state = budget(client, pid)
     assert state["spent"] == "6.250000"
     assert state["reserved"] == "0.000000"
@@ -210,3 +212,40 @@ def test_uncertain_resubmission_keeps_previous_obligation(client):
     # An old worker cannot release a newer attempt's reservation.
     queue.fail(claimed, "test-worker", "LATE_ERROR", "late")
     assert budget(client, pid)["reserved"] == "1.000000"
+
+
+@pytest.mark.parametrize("invalid", ["NaN", "-1", "0.0000001"])
+def test_apr_import_validates_budget_amounts(client, invalid):
+    apr = project(client)
+    apr["budget"]["budget_limit"] = invalid
+    response = client.post("/api/v1/projects/import", json=apr)
+    assert response.status_code == 422, response.text
+
+
+def test_stale_attempt_with_same_owner_cannot_release_new_reservation(client):
+    import time
+
+    from sqlalchemy import update
+
+    from app import db
+    from app.execution.queue import Queue
+
+    apr = storyboard(client)
+    pid = apr["project_id"]
+    client.post(
+        f"/api/v1/projects/{pid}/generate",
+        json={"base_revision": apr["revision"], "shot_ids": [apr["shots"][0]["id"]]},
+    )
+    queue = Queue(client.app.state.database)
+    old = queue.claim("same-worker")
+    with queue.database.transaction() as connection:
+        queue.set_state(connection, old, "running")
+        connection.execute(
+            update(db.jobs)
+            .where(db.jobs.c.id == old["id"])
+            .values(lease_expires_at=time.time() - 1)
+        )
+    fresh = queue.claim("same-worker")
+    assert fresh["attempt"] == old["attempt"] + 1
+    queue.fail(old, "same-worker", "LATE_ERROR", "stale attempt")
+    assert client.get(f"/api/v1/projects/{pid}/jobs/{fresh['id']}").json()["state"] == "claimed"
