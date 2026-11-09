@@ -391,18 +391,18 @@ def job(project_id: UUID, job_id: UUID, request: Request):
 
 @router.post("/projects/{project_id}/jobs/{job_id}/cancel")
 def cancel_job(project_id: UUID, job_id: UUID, request: Request):
-    from app.execution.queue import Queue
+    from app.execution.queue import Queue, public_job
 
-    return Queue(request.app.state.database).cancel(project_id, job_id)
+    return public_job(Queue(request.app.state.database).cancel(project_id, job_id))
 
 
 @router.post("/projects/{project_id}/jobs/{job_id}/retry")
 def retry_job(
     project_id: UUID, job_id: UUID, request: Request, body: JobRetryRequest | None = None
 ):
-    from app.execution.queue import Queue
+    from app.execution.queue import Queue, public_job
 
-    return Queue(request.app.state.database).retry(project_id, job_id, body)
+    return public_job(Queue(request.app.state.database).retry(project_id, job_id, body))
 
 
 @router.get("/events")

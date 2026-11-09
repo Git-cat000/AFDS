@@ -105,6 +105,9 @@ def create_app(settings: Settings | None = None):
     from app.exchange_api import router as exchange_router
 
     application.include_router(exchange_router, prefix="/api/v1")
+    from app.restore_api import router as restore_router
+
+    application.include_router(restore_router, prefix="/api/v1")
     return application
 
 

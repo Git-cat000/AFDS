@@ -223,7 +223,13 @@ class Queue:
                     "Restore the asset or change the shot to regenerate.",
                     409,
                 )
-        if job["operation"] in {"generate_image", "generate_speech", "import_audio", "review_shot"}:
+        if job["operation"] in {
+            "generate_image",
+            "generate_speech",
+            "import_audio",
+            "review_shot",
+            "restore_project",
+        }:
             return
         if job["operation"] == "export_project":
             artifact = job.get("artifact", {})

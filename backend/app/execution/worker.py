@@ -73,6 +73,10 @@ class Worker:
                 from app.exchange import execute_export
 
                 result = execute_export(self.database, job, work, checkpoint)
+            elif job["operation"] == "restore_project":
+                from app.restore_service import RestoreService
+
+                result = RestoreService(self.database).execute(job, work, checkpoint)
             else:
                 sources = [
                     asset_path(self.database, job["project_id"], item["asset_id"])
@@ -110,6 +114,10 @@ class Worker:
                 ReviewService(self.database).publish(job, self.owner, result, elapsed_ms)
             elif job["operation"] == "export_project":
                 self.publish_export(job, result, elapsed_ms)
+            elif job["operation"] == "restore_project":
+                from app.restore_service import RestoreService
+
+                RestoreService(self.database).publish(job, self.owner, result, elapsed_ms)
             else:
                 self.publish(job, result, elapsed_ms)
         except Cancelled:
