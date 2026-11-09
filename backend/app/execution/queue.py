@@ -520,6 +520,10 @@ class Queue:
                 )
                 .values(lease_expires_at=time.time() + self.database.settings.lease_seconds)
             )
+            if result.rowcount == 1:
+                from app.operations_service import pulse_worker
+
+                pulse_worker(connection, owner)
             return result.rowcount == 1
 
     def cancel(self, project_id, job_id):

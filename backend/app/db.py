@@ -165,6 +165,15 @@ review_reports = Table(
 )
 
 
+worker_heartbeats = Table(
+    "worker_heartbeats",
+    metadata,
+    Column("owner", String, primary_key=True),
+    Column("started_at", Float, nullable=False),
+    Column("last_seen_at", Float, nullable=False),
+)
+
+
 class Database:
     def __init__(self, settings: Settings):
         self.settings = settings

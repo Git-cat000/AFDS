@@ -24,8 +24,15 @@ class Worker:
         self.queue = Queue(database)
         self.engine = ProjectEngine(database)
         self.owner = new_id()
+        self.last_pulse = 0
 
     def run_once(self):
+        if time.time() - self.last_pulse >= 5:
+            from app.operations_service import pulse_worker
+
+            with self.database.transaction() as connection:
+                pulse_worker(connection, self.owner)
+            self.last_pulse = time.time()
         job = self.queue.claim(self.owner)
         if job is None:
             return False

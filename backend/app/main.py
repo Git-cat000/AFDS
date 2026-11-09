@@ -108,6 +108,9 @@ def create_app(settings: Settings | None = None):
     from app.restore_api import router as restore_router
 
     application.include_router(restore_router, prefix="/api/v1")
+    from app.operations_api import router as operations_router
+
+    application.include_router(operations_router, prefix="/api/v1")
     return application
 
 
