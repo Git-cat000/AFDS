@@ -155,6 +155,15 @@ cost_entries = Table(
     Column("payload", JSON, nullable=False),
 )
 
+review_reports = Table(
+    "review_reports",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("project_id", ForeignKey("projects.id"), nullable=False, index=True),
+    Column("job_id", ForeignKey("jobs.id"), nullable=False, unique=True),
+    Column("payload", JSON, nullable=False),
+)
+
 
 class Database:
     def __init__(self, settings: Settings):

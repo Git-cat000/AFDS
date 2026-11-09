@@ -215,6 +215,7 @@ function ConnectionForm({
       allow_private_network: draft.allow_private_network,
       timeout_seconds: draft.timeout_seconds,
       json_mode: draft.json_mode,
+      vision_enabled: draft.vision_enabled || false,
       video_seconds: draft.video_seconds,
       video_size: draft.video_size,
       video_poll_seconds: draft.video_poll_seconds,
@@ -490,6 +491,16 @@ function ConnectionForm({
               </label>
             )}
           </div>
+          {profile.kind === "llm" && (
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={draft.vision_enabled || false}
+                onChange={(e) => patch("vision_enabled", e.target.checked)}
+              />
+              允许此模型用于关键帧审片（需支持图像输入）
+            </label>
+          )}
           {profile.kind === "llm" && (
             <label className="check-label">
               <input

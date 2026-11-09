@@ -4,6 +4,20 @@ export type Format = {
   width: number;
   height: number;
 };
+export type AudioTrack = {
+  id: string;
+  type: "audio";
+  name?: string;
+  muted: boolean;
+  gain_db: number;
+  items: {
+    asset_id: string;
+    start_frame: number;
+    source_start_frame: number;
+    duration_frames: number;
+    gain_db: number;
+  }[];
+};
 export type Shot = {
   id: string;
   scene_id: string;
@@ -16,17 +30,22 @@ export type Shot = {
   locked: boolean;
   status: string;
   active_asset_version_id: string | null;
+  character_ids?: string[];
+  input_state_ref?: string | null;
+  output_state_ref?: string | null;
 };
 export type Asset = {
   id: string;
   sha256: string;
   media_type: string;
   duration_frames?: number;
+  duration_seconds?: number;
   provenance: {
     provider_id: string;
     job_id: string;
     prompt_hash: string;
     is_mock?: boolean;
+    contains_mock?: boolean;
   };
 };
 export type AssetVersion = {
@@ -45,21 +64,77 @@ export type Project = {
   format: Format;
   style_bible: Record<string, unknown>;
   shots: Shot[];
+  scenes?: { id: string; title: string; location_id?: string | null }[];
+  characters?: {
+    id: string;
+    name: string;
+    invariant_traits: string[];
+    reference_asset_ids: string[];
+  }[];
+  locations?: {
+    id: string;
+    name: string;
+    spatial_notes: string;
+    reference_asset_ids: string[];
+  }[];
+  world_states?: {
+    id: string;
+    scene_id: string;
+    shot_id?: string | null;
+    characters: {
+      character_id: string;
+      costume: string;
+      pose: string;
+      emotion: string;
+    }[];
+    props: {
+      name: string;
+      description: string;
+      holder_character_id: string | null;
+    }[];
+    environment: Record<string, string>;
+  }[];
+  continuity_links?: {
+    id: string;
+    source_shot_id: string;
+    target_shot_id: string;
+    kind: string;
+    note: string;
+  }[];
   assets: Asset[];
   asset_versions: AssetVersion[];
   timeline: {
-    tracks: {
-      items: {
-        shot_id: string;
-        start_frame: number;
-        duration_frames: number;
-      }[];
+    version: number;
+    tracks: [
+      {
+        id: string;
+        type: "video";
+        items: {
+          shot_id: string;
+          start_frame: number;
+          duration_frames: number;
+        }[];
+      },
+      ...AudioTrack[],
+    ];
+    captions: {
+      id: string;
+      start_frame: number;
+      duration_frames: number;
+      text: string;
+    }[];
+    markers: {
+      id: string;
+      frame: number;
+      label: string;
+      kind: "beat" | "dialogue" | "note";
     }[];
   };
   render_asset_id: string | null;
   render_status: string;
 };
 export type Plan = {
+  type?: string;
   id: string;
   state: string;
   base_revision: number;
@@ -70,6 +145,12 @@ export type Plan = {
   estimated_cost: { status: string; amount: number | null };
 };
 export type Job = {
+  artifact?: {
+    filename: string;
+    media_type: string;
+    sha256: string;
+    size_bytes?: number;
+  };
   id: string;
   state: string;
   operation: string;
@@ -98,6 +179,7 @@ export type Provider = {
 
 export type ProviderKind = "llm" | "video" | "image" | "speech";
 export type Connection = {
+  vision_enabled?: boolean;
   kind: ProviderKind;
   provider_id: string;
   display_name: string;
@@ -192,5 +274,6 @@ export type ChangeSet = {
 export type Preview = {
   changes: { field: string; before: unknown; after: unknown }[];
   affected_shot_ids: string[];
+  protected_shot_ids?: string[];
   render_invalidated: boolean;
 };

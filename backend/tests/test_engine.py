@@ -11,7 +11,7 @@ def test_apr_creation_export_import_and_references(client):
     assert sum(s["duration_frames"] for s in apr["shots"]) == 480
     pid = apr["project_id"]
     exported = client.get(f"/api/v1/projects/{pid}/export").json()
-    assert exported["apr_schema_version"] == "0.1.0"
+    assert exported["apr_schema_version"] == "0.2.0"
     imported = client.post("/api/v1/projects/import", json=exported)
     assert imported.status_code == 201, imported.text
     assert imported.json()["project_id"] != pid

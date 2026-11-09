@@ -57,11 +57,16 @@ def import_asset(
         "size_bytes": destination.stat().st_size,
         **metadata,
         "provenance": provenance,
-        "license": "generated-test-media" if provenance.get("is_mock") else "unverified",
-        "source": "local-mock" if provenance.get("is_mock") else provenance["provider_id"],
-        "consent": "not_applicable"
-        if provenance.get("is_mock")
-        else "explicit_generation_approval",
+        "license": provenance.get(
+            "license", "generated-test-media" if provenance.get("is_mock") else "unverified"
+        ),
+        "source": provenance.get(
+            "source", "local-mock" if provenance.get("is_mock") else provenance["provider_id"]
+        ),
+        "consent": provenance.get(
+            "consent",
+            "not_applicable" if provenance.get("is_mock") else "explicit_generation_approval",
+        ),
     }
     connection.execute(
         insert(db.assets).values(

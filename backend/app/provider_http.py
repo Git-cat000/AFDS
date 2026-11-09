@@ -19,6 +19,14 @@ class ProviderError(DomainError):
         self.rejected = rejected
 
 
+def reject_credential_output(value, secret):
+    """Inspect decoded schema values, including JSON-unescaped prose."""
+    if secret and secret in json.dumps(value, ensure_ascii=False):
+        raise ProviderError(
+            "PROVIDER_OUTPUT_INVALID", "Provider output contained private connection data"
+        )
+
+
 def check_destination(url, allow_private=False, allow_query=False):
     try:
         parsed = urlsplit(url)

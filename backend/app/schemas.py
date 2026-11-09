@@ -5,6 +5,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.timeline_models import TimelineData as Timeline
+
 
 def new_id() -> str:
     return str(uuid4())
@@ -71,24 +73,6 @@ class Scene(Schema):
     shot_ids: list[UUID] = Field(default_factory=list)
 
 
-class Placement(Schema):
-    shot_id: UUID
-    start_frame: int = Field(ge=0)
-    duration_frames: int = Field(gt=0)
-
-
-class Track(Schema):
-    id: str = "v1"
-    type: Literal["video", "audio"] = "video"
-    items: list[Placement] = Field(default_factory=list)
-
-
-class Timeline(Schema):
-    version: int = 1
-    tracks: list[Track] = Field(default_factory=lambda: [Track()])
-    markers: list[dict[str, Any]] = Field(default_factory=list)
-
-
 class ProjectCreate(Schema):
     title: str = Field(min_length=1, max_length=200)
     brief: str = Field(default="", max_length=10000)
@@ -108,6 +92,8 @@ class Asset(Schema):
     fps_den: int | None = None
     duration_frames: int | None = None
     duration_seconds: float | None = None
+    sample_rate: int | None = Field(default=None, gt=0)
+    channels: int | None = Field(default=None, gt=0)
     provenance: dict[str, Any]
     license: str
     source: str
@@ -148,12 +134,14 @@ class BudgetPolicy(Schema):
 
 
 class APR(ProjectCreate):
-    apr_schema_version: Literal["0.1.0"] = "0.1.0"
+    apr_schema_version: Literal["0.1.0", "0.2.0"] = "0.2.0"
     project_id: UUID = Field(default_factory=uuid4)
     revision: int = Field(default=1, ge=1)
     status: Literal["draft", "ready", "archived"] = "draft"
     characters: list[dict[str, Any]] = Field(default_factory=list)
     locations: list[dict[str, Any]] = Field(default_factory=list)
+    world_states: list[dict[str, Any]] = Field(default_factory=list)
+    continuity_links: list[dict[str, Any]] = Field(default_factory=list)
     scenes: list[Scene] = Field(default_factory=list)
     shots: list[Shot] = Field(default_factory=list)
     timeline: Timeline = Field(default_factory=Timeline)
@@ -195,6 +183,20 @@ class APR(ProjectCreate):
     def validate_versions(cls, values):
         return [AssetVersion.model_validate(value).model_dump(mode="json") for value in values]
 
+    @field_validator("world_states")
+    @classmethod
+    def normalize_world_states(cls, values):
+        from app.continuity_schema import WorldState
+
+        return [WorldState.model_validate(value).model_dump(mode="json") for value in values]
+
+    @field_validator("continuity_links")
+    @classmethod
+    def normalize_links(cls, values):
+        from app.continuity_schema import ContinuityLink
+
+        return [ContinuityLink.model_validate(value).model_dump(mode="json") for value in values]
+
     @model_validator(mode="after")
     def references(self):
         scenes = {s.id for s in self.scenes}
@@ -229,18 +231,12 @@ class APR(ProjectCreate):
                 raise ValueError("Asset version reference is invalid")
         if self.render_asset_id and str(self.render_asset_id) not in assets:
             raise ValueError("Missing render asset")
-        for track in self.timeline.tracks:
-            end = 0
-            for item in track.items:
-                if item.shot_id not in shots:
-                    raise ValueError("Timeline references a missing shot")
-                if item.start_frame != end:
-                    raise ValueError("v0.1 requires a contiguous non-overlapping timeline")
-                if item.duration_frames != shots[item.shot_id].duration_frames:
-                    raise ValueError("Timeline duration differs from the shot")
-                end += item.duration_frames
-        if len(self.timeline.tracks) != 1 or self.timeline.tracks[0].type != "video":
-            raise ValueError("v0.1 renders one video track")
+        from app.continuity import validate_continuity
+        from app.timeline_service import validate_timeline
+
+        validate_timeline(self.model_dump(mode="json"))
+        validate_continuity(self.model_dump(mode="json"))
+        self.apr_schema_version = "0.2.0"
         return self
 
 

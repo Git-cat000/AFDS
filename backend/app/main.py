@@ -13,7 +13,7 @@ from app.errors import DomainError
 
 def create_app(settings: Settings | None = None):
     config = settings or Settings()
-    application = FastAPI(title="AFDS", version="0.3.0")
+    application = FastAPI(title="AFDS", version="0.4.0")
     application.state.settings = config
     from app.db import Database
 
@@ -83,7 +83,7 @@ def create_app(settings: Settings | None = None):
 
     @application.get("/api/v1/version")
     def version():
-        return {"version": "0.3.0", "apr_schema_version": "0.1.0"}
+        return {"version": "0.4.0", "apr_schema_version": "0.2.0"}
 
     from app.api import router
 
@@ -94,6 +94,17 @@ def create_app(settings: Settings | None = None):
     from app.budget_api import router as budget_router
 
     application.include_router(budget_router, prefix="/api/v1")
+    from app.continuity_api import router as continuity_router
+    from app.timeline_api import router as timeline_router
+
+    application.include_router(continuity_router, prefix="/api/v1")
+    application.include_router(timeline_router, prefix="/api/v1")
+    from app.review_api import router as review_router
+
+    application.include_router(review_router, prefix="/api/v1")
+    from app.exchange_api import router as exchange_router
+
+    application.include_router(exchange_router, prefix="/api/v1")
     return application
 
 

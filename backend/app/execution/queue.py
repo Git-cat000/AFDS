@@ -42,6 +42,8 @@ def digest(value):
 
 
 def shot_request(apr, shot, provider_config=None):
+    from app.continuity import continuity_context
+
     request = {
         "shot_id": shot["id"],
         "order": shot["order"],
@@ -51,6 +53,7 @@ def shot_request(apr, shot, provider_config=None):
         "duration_frames": shot["duration_frames"],
         "format": apr["format"],
         "style_bible": apr["style_bible"],
+        "continuity": continuity_context(apr, shot),
         "provider_id": "mock-video-local",
         "model_id": "ffmpeg-test-pattern",
         "adapter_version": "0.1.0",
@@ -66,6 +69,8 @@ def shot_request(apr, shot, provider_config=None):
 
 
 def render_request(apr):
+    from app.timeline_service import composition_request
+
     items = []
     for placement in apr["timeline"]["tracks"][0]["items"]:
         shot = find(apr["shots"], placement["shot_id"])
@@ -83,6 +88,7 @@ def render_request(apr):
         "format": apr["format"],
         "audio_policy": "silent",
         "adapter_version": "0.1.0",
+        **composition_request(apr),
     }
 
 
@@ -97,6 +103,13 @@ def serialize(row):
         "lease_expires_at": row["lease_expires_at"],
         "available_at": row["available_at"],
     }
+
+
+def public_job(job):
+    value = copy.deepcopy(job)
+    value.get("request", {}).pop("staging_path", None)
+    value.get("artifact", {}).pop("relative_path", None)
+    return value
 
 
 class Queue:
@@ -151,6 +164,7 @@ class Queue:
             "output_asset_ids": [],
             "error": None,
             "created_at": time.time(),
+            "source_revision": apr["revision"],
             "input_summary": {"request_hash": fingerprint},
             "elapsed_ms": None,
             "external_task_id": None,
@@ -209,7 +223,13 @@ class Queue:
                     "Restore the asset or change the shot to regenerate.",
                     409,
                 )
-        if job["operation"] in {"generate_image", "generate_speech"}:
+        if job["operation"] in {"generate_image", "generate_speech", "import_audio", "review_shot"}:
+            return
+        if job["operation"] == "export_project":
+            artifact = job.get("artifact", {})
+            path = contained(self.database.settings.data_dir, artifact.get("relative_path", ""))
+            if not path.is_file() or file_hash(path) != artifact.get("sha256"):
+                raise DomainError("CACHE_MEDIA_INVALID", "Cached export is missing or corrupt", 409)
             return
         if job["operation"] == "render_timeline":
             apr["render_asset_id"] = job["output_asset_ids"][0]

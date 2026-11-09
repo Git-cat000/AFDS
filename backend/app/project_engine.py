@@ -102,6 +102,7 @@ class ProjectEngine:
             ]
         apr["scenes"].sort(key=lambda s: s["order"])
         apr["shots"].sort(key=lambda s: s["order"])
+        apr = validate(apr)
         from app.budget import BudgetService
 
         finance = BudgetService(self.database).summary(connection, apr)
@@ -179,6 +180,10 @@ class ProjectEngine:
         pid = apr["project_id"]
         connection.execute(delete(db.edges).where(db.edges.c.project_id == pid))
         timeline_shots = {i["shot_id"] for i in apr["timeline"]["tracks"][0]["items"]}
+        from app.continuity import continuity_edges
+
+        for edge in continuity_edges(apr):
+            connection.execute(insert(db.edges).values(project_id=pid, **edge))
         for version in apr["asset_versions"]:
             connection.execute(
                 insert(db.edges).values(
@@ -225,17 +230,23 @@ class ProjectEngine:
                 if target not in affected:
                     affected.add(target)
                     queue.append(target)
+        protected_versions = {
+            s["active_asset_version_id"]
+            for s in apr["shots"]
+            if s["id"] in affected and (s["locked"] or s["status"] in {"approved", "needs_review"})
+        }
         for version in apr["asset_versions"]:
-            if version["id"] in affected:
+            if version["id"] in affected and version["id"] not in protected_versions:
                 version["status"] = "stale"
         for shot in apr["shots"]:
-            if shot["id"] in shot_ids:
+            if shot["id"] in affected:
                 if shot["status"] == "archived":
                     continue
                 protected = shot["locked"] or shot["status"] in {"approved", "needs_review"}
                 shot["status"] = "needs_review" if protected else "stale"
         if shot_ids:
             apr["render_status"] = "stale"
+        return {s["id"] for s in apr["shots"] if s["id"] in affected}
 
     def apply_changes(self, connection, apr, body: ChangeSet):
         affected = set()
@@ -310,12 +321,17 @@ class ProjectEngine:
                 affected.update(s["id"] for s in apr["shots"])
             if field == "status" and value == "archived":
                 apr["render_status"] = "stale"
-        self.invalidate(connection, apr, affected)
+        affected = self.invalidate(connection, apr, affected)
         rebuild_timeline(apr)
         validate(apr)
         return {
             "changes": changes,
             "affected_shot_ids": sorted(affected),
+            "protected_shot_ids": sorted(
+                s["id"]
+                for s in apr["shots"]
+                if s["id"] in affected and s["status"] == "needs_review"
+            ),
             "render_invalidated": bool(affected) or apr["render_status"] == "stale",
             "estimated_cost": {"status": "known", "amount": 0, "currency": "USD"},
         }
@@ -404,14 +420,32 @@ class ProjectEngine:
         remap = {
             old: new_id()
             for old in [apr["project_id"]]
-            + [x["id"] for key in ("scenes", "shots", "characters", "locations") for x in apr[key]]
+            + [
+                x["id"]
+                for key in (
+                    "scenes",
+                    "shots",
+                    "characters",
+                    "locations",
+                    "world_states",
+                    "continuity_links",
+                )
+                for x in apr[key]
+            ]
         }
         apr["project_id"] = remap[apr["project_id"]]
         apr["revision"] = 1
         apr["status"] = "draft"
         apr["assets"], apr["asset_versions"] = [], []
         apr["render_asset_id"], apr["render_status"] = None, "missing"
-        for key in ("characters", "locations", "scenes", "shots"):
+        for key in (
+            "characters",
+            "locations",
+            "scenes",
+            "shots",
+            "world_states",
+            "continuity_links",
+        ):
             for item in apr[key]:
                 item["id"] = remap[item["id"]]
                 if "reference_asset_ids" in item:
@@ -425,6 +459,22 @@ class ProjectEngine:
             shot["character_ids"] = [remap[c] for c in shot["character_ids"]]
             shot["active_asset_version_id"] = None
             shot["status"], shot["locked"] = "draft", False
+            for field in ("input_state_ref", "output_state_ref"):
+                if shot.get(field):
+                    shot[field] = remap[shot[field]]
+        for state in apr["world_states"]:
+            state["scene_id"] = remap[state["scene_id"]]
+            if state.get("shot_id"):
+                state["shot_id"] = remap[state["shot_id"]]
+            for character in state.get("characters", []):
+                character["character_id"] = remap[character["character_id"]]
+            for prop in state.get("props", []):
+                if prop.get("holder_character_id"):
+                    prop["holder_character_id"] = remap[prop["holder_character_id"]]
+        for link in apr["continuity_links"]:
+            link["source_shot_id"] = remap[link["source_shot_id"]]
+            link["target_shot_id"] = remap[link["target_shot_id"]]
+        apr["timeline"]["tracks"] = apr["timeline"]["tracks"][:1]
         for item in apr["timeline"]["tracks"][0]["items"]:
             item["shot_id"] = remap[item["shot_id"]]
         with self.database.transaction() as connection:

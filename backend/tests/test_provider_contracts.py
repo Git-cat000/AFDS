@@ -63,7 +63,9 @@ def remote_server():
             elif self.path == "/v1/chat/completions":
                 content = state["story"]
                 data = {
-                    "choices": [{"message": {"content": json.dumps(content)}}],
+                    "choices": [
+                        {"message": {"content": state.get("story_raw") or json.dumps(content)}}
+                    ],
                     "usage": {"total_tokens": 100},
                 }
             elif self.path == "/v1/images/generations":

@@ -128,6 +128,8 @@ def execute(engine, project_id, plan_id, body):
         if not row:
             raise DomainError("NOT_FOUND", "Plan not found", 404)
         plan = copy.deepcopy(row["payload"])
+        if plan.get("type", "storyboard") != "storyboard":
+            raise DomainError("PLAN_TYPE_MISMATCH", "Use the matching plan approval endpoint", 409)
         engine.check_revision(apr, plan["base_revision"])
         if plan["state"] != "proposed":
             raise DomainError("PLAN_EXECUTED", "This plan has already been executed", 409)

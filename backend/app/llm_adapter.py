@@ -3,7 +3,7 @@ import json
 from pydantic import Field, ValidationError
 
 from app.errors import DomainError
-from app.provider_http import ProviderHTTP
+from app.provider_http import ProviderHTTP, reject_credential_output
 from app.schemas import Camera, Scene, Schema, Shot, new_id
 
 
@@ -38,6 +38,9 @@ def propose_story(config, apr, message):
         "style_bible": apr["style_bible"],
         "format": apr["format"],
         "request": message,
+        "characters": apr.get("characters", [])[:40],
+        "locations": apr.get("locations", [])[:40],
+        "world_states": apr.get("world_states", [])[-20:],
     }
     payload = {
         "model": config["model"],
@@ -56,6 +59,7 @@ def propose_story(config, apr, message):
         if config["api_key"] and config["api_key"] in content:
             raise ValueError("Unexpected credential in output")
         proposal = StoryProposal.model_validate_json(content)
+        reject_credential_output(proposal.model_dump(mode="json"), config["api_key"])
     except (KeyError, IndexError, TypeError, ValueError, ValidationError) as error:
         raise DomainError(
             "PROVIDER_OUTPUT_INVALID", "LLM output does not match the storyboard schema", 422

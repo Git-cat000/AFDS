@@ -43,7 +43,11 @@ def remote_lease(queue, job, owner):
 
 def prompt_for_shot(request):
     return json.dumps(
-        {key: request[key] for key in ("action", "emotion", "camera", "style_bible")},
+        {
+            key: request[key]
+            for key in ("action", "emotion", "camera", "style_bible", "continuity")
+            if key in request
+        },
         ensure_ascii=False,
     )
 

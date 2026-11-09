@@ -33,6 +33,9 @@ import { ProviderSettings } from "./ProviderSettings";
 import { AuxiliaryMedia } from "./AuxiliaryMedia";
 import { RemoteJobRecovery } from "./RemoteJobRecovery";
 import { ProjectBudget } from "./ProjectBudget";
+import { ContinuityPanel } from "./ContinuityPanel";
+import { ReviewPanel } from "./ReviewPanel";
+import { TimelineEditor } from "./TimelineEditor";
 import type {
   ChangeSet,
   Job,
@@ -137,7 +140,11 @@ export function App() {
     queryFn: () => api<Revision[]>(`/projects/${projectId}/revisions`),
   });
   const apr = project.data;
-  const plan = plans.data?.filter((p) => p.state === "proposed").at(-1);
+  const plan = plans.data
+    ?.filter(
+      (p) => p.state === "proposed" && (!p.type || p.type === "storyboard"),
+    )
+    .at(-1);
   const activeJobs =
     jobs.data?.filter((j) =>
       ["queued", "claimed", "running", "verifying", "retry_wait"].includes(
@@ -238,6 +245,27 @@ export function App() {
               分镜工作室
             </button>
             <button
+              className={`nav ${tab === "continuity" ? "active" : ""}`}
+              onClick={() => setTab("continuity")}
+            >
+              <Clapperboard size={18} />
+              角色与连续性
+            </button>
+            <button
+              className={`nav ${tab === "review" ? "active" : ""}`}
+              onClick={() => setTab("review")}
+            >
+              <Check size={18} />
+              审片与证据
+            </button>
+            <button
+              className={`nav ${tab === "timeline" ? "active" : ""}`}
+              onClick={() => setTab("timeline")}
+            >
+              <Layers size={18} />
+              音画时间轴
+            </button>
+            <button
               className={`nav ${tab === "assets" ? "active" : ""}`}
               onClick={() => setTab("assets")}
             >
@@ -262,7 +290,7 @@ export function App() {
         </button>
         <div className="rail-bottom">
           <span className="online-dot" />
-          本地工作区<small>v0.3 · FILM STUDIO</small>
+          本地工作区<small>v0.4 · FILM STUDIO</small>
         </div>
       </aside>
       <main className="workspace">
@@ -393,6 +421,34 @@ export function App() {
               <div className="heading-actions">
                 <button onClick={() => setSettingsOpen(true)}>项目设定</button>
                 <button onClick={() => setHistoryOpen(true)}>版本记录</button>
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await api(`/projects/${projectId}/exports`, {
+                        base_revision: apr.revision,
+                        format: "zip",
+                      });
+                      setTab("jobs");
+                    })
+                  }
+                >
+                  导出工程包
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await api(`/projects/${projectId}/exports`, {
+                        base_revision: apr.revision,
+                        format: "otio",
+                      });
+                      setTab("jobs");
+                    })
+                  }
+                >
+                  导出 OTIO
+                </button>
                 <button
                   className="primary"
                   disabled={busy || !apr.shots.length || activeJobs.length > 0}
@@ -685,6 +741,31 @@ export function App() {
                 </section>
               </div>
             )}
+            {tab === "continuity" && (
+              <ContinuityPanel
+                key={apr.project_id}
+                project={apr}
+                run={run}
+                busy={busy}
+              />
+            )}
+            {tab === "timeline" && (
+              <TimelineEditor
+                key={`${apr.project_id}:${apr.revision}`}
+                project={apr}
+                run={run}
+                busy={busy}
+              />
+            )}
+            {tab === "review" && (
+              <ReviewPanel
+                key={apr.project_id}
+                project={apr}
+                settings={modelSettings.data}
+                run={run}
+                busy={busy}
+              />
+            )}
             {tab === "jobs" && (
               <section className="page compact">
                 <div className="section-heading">
@@ -708,6 +789,9 @@ export function App() {
                           : {
                               generate_image: "生成参考图像",
                               generate_speech: "合成语音旁白",
+                              import_audio: "导入音频素材",
+                              review_shot: "镜头审片与证据",
+                              export_project: "导出工程",
                             }[j.operation] || "时间轴 · 渲染成片"}
                       </h3>
                       <small>
@@ -724,6 +808,16 @@ export function App() {
                       )}
                       {j.external_task_id && (
                         <p className="muted">远端任务 {j.external_task_id}</p>
+                      )}
+                      {j.artifact && j.state === "completed" && (
+                        <a
+                          className="button"
+                          href={`/api/v1/projects/${apr.project_id}/exports/${j.id}/file`}
+                          download
+                        >
+                          <Download size={15} />
+                          下载 {j.artifact.filename}
+                        </a>
                       )}
                       {j.remote_notice && (
                         <p className="protocol-note">{j.remote_notice}</p>
@@ -951,7 +1045,9 @@ export function App() {
       {previewAsset && apr && (
         <Modal
           title={
-            apr.assets.find((a) => a.id === previewAsset)?.provenance.is_mock
+            apr.assets.find((a) => a.id === previewAsset)?.provenance.is_mock ||
+            apr.assets.find((a) => a.id === previewAsset)?.provenance
+              .contains_mock
               ? "媒体预览 · DEMO / MOCK"
               : "媒体预览"
           }
@@ -984,7 +1080,10 @@ export function App() {
             />
           )}
           <p className="muted">
-            {apr.assets.find((a) => a.id === previewAsset)?.provenance.is_mock
+            {apr.assets.find((a) => a.id === previewAsset)?.provenance
+              .is_mock ||
+            apr.assets.find((a) => a.id === previewAsset)?.provenance
+              .contains_mock
               ? "本片由本地测试画面组成。"
               : `来源 ${apr.assets.find((a) => a.id === previewAsset)?.provenance.provider_id || ""}`}
           </p>
@@ -1165,6 +1264,12 @@ function ShotEditor({
               ? "成片需要重新渲染。"
               : "成片保持可用。"}
           </p>
+          {!!preview.protected_shot_ids?.length && (
+            <p className="protocol-note">
+              其中 {preview.protected_shot_ids.length}{" "}
+              个保护镜头会保留选中素材并标记待审。
+            </p>
+          )}
           <div className="button-row">
             <button onClick={() => setPreview(null)}>返回编辑</button>
             <button

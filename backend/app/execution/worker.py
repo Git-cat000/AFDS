@@ -2,6 +2,7 @@ import argparse
 import copy
 import logging
 import time
+from pathlib import Path
 
 from app import db
 from app.adapters import video_adapter
@@ -43,9 +44,7 @@ class Worker:
                     self.queue.set_state(connection, current, "cancelled")
                     return True
                 self.queue.set_state(connection, current, "running", progress=10)
-            work = contained(
-                self.settings.data_dir, f"cache/{job['id']}/{self.owner}-{job['attempt']}"
-            )
+            work = contained(self.settings.data_dir, f"cache/{job['id']}/{new_id()}")
             work.mkdir(parents=True, exist_ok=True)
             output = work / "output.mp4"
 
@@ -60,6 +59,20 @@ class Worker:
                     result = self.run_remote(job, work)
             elif job["operation"] in {"generate_image", "generate_speech"}:
                 result = self.run_remote(job, work)
+            elif job["operation"] == "import_audio":
+                from app.audio_pipeline import process_audio_import
+
+                result = process_audio_import(self.settings, job["request"], work, checkpoint)
+            elif job["operation"] == "review_shot":
+                from app.remote_media import remote_lease
+                from app.review_service import ReviewService
+
+                with remote_lease(self.queue, job, self.owner) as review_checkpoint:
+                    result = ReviewService(self.database).execute(job, work, review_checkpoint)
+            elif job["operation"] == "export_project":
+                from app.exchange import execute_export
+
+                result = execute_export(self.database, job, work, checkpoint)
             else:
                 sources = [
                     asset_path(self.database, job["project_id"], item["asset_id"])
@@ -74,7 +87,31 @@ class Worker:
                     "video": output,
                     "metadata": render(self.settings, job["request"], sources, output, checkpoint),
                 }
-            self.publish(job, result, int((time.monotonic() - started) * 1000))
+                if job["request"].get("audio_items") or job["request"].get("captions"):
+                    from app.audio_pipeline import finish_audio
+
+                    audio_sources = []
+                    for item in job["request"].get("audio_items", []):
+                        source = asset_path(self.database, job["project_id"], item["asset_id"])
+                        if file_hash(source) != item["sha256"]:
+                            raise DomainError(
+                                "HASH_MISMATCH", "Audio media integrity check failed", 422
+                            )
+                        audio_sources.append(source)
+                    mixed = work / "mixed.mp4"
+                    result["metadata"] = finish_audio(
+                        self.settings, job["request"], audio_sources, output, mixed, checkpoint
+                    )
+                    result["video"] = mixed
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            if job["operation"] == "review_shot":
+                from app.review_service import ReviewService
+
+                ReviewService(self.database).publish(job, self.owner, result, elapsed_ms)
+            elif job["operation"] == "export_project":
+                self.publish_export(job, result, elapsed_ms)
+            else:
+                self.publish(job, result, elapsed_ms)
         except Cancelled:
             self.queue.fail(
                 job, self.owner, "LEASE_LOST", "Worker lease lost or cancellation requested"
@@ -143,7 +180,7 @@ class Worker:
                 "model_id": job["model_id"],
                 "adapter_version": job["adapter_version"],
                 "prompt_hash": job["fingerprint"],
-                "parameters": job["request"]["format"],
+                "parameters": job["request"].get("format", apr["format"]),
                 "elapsed_ms": elapsed_ms,
                 "cost": job["actual_cost"],
                 "is_mock": result.get("is_mock", True),
@@ -152,10 +189,31 @@ class Worker:
             }
             if "normalization" in result:
                 provenance["normalization"] = result["normalization"]
+            if job["operation"] == "import_audio":
+                provenance.update(
+                    name=job["request"]["name"],
+                    rights_confirmed=True,
+                    license="user-provided-unverified",
+                    source="user-upload",
+                    consent="explicit_upload_rights_confirmation",
+                )
+            metadata = dict(result["metadata"])
+            for key in ("audio", "caption_count"):
+                if key in metadata:
+                    provenance[key] = metadata.pop(key)
             if job["operation"] == "render_timeline":
-                input_ids = {item["asset_id"] for item in job["request"]["items"]}
+                input_ids = {
+                    item["asset_id"]
+                    for item in job["request"]["items"] + job["request"].get("audio_items", [])
+                }
                 provenance["is_mock"] = all(
                     asset["provenance"].get("is_mock", False)
+                    for asset in apr["assets"]
+                    if asset["id"] in input_ids
+                )
+                provenance["contains_mock"] = any(
+                    asset["provenance"].get("is_mock", False)
+                    or asset["provenance"].get("contains_mock", False)
                     for asset in apr["assets"]
                     if asset["id"] in input_ids
                 )
@@ -164,7 +222,7 @@ class Worker:
                 self.settings,
                 job["project_id"],
                 result["video"],
-                result["metadata"],
+                metadata,
                 provenance,
                 result.get("media_type", "video"),
             )
@@ -211,7 +269,7 @@ class Worker:
                     shot["active_asset_version_id"] = version["id"]
                     shot["status"] = "ready"
                     apr["render_status"] = "stale"
-            elif job["operation"] in {"generate_image", "generate_speech"}:
+            elif job["operation"] in {"generate_image", "generate_speech", "import_audio"}:
                 fresh = True
             else:
                 try:
@@ -243,6 +301,62 @@ class Worker:
                     {"asset_id": asset["id"]},
                     job["id"],
                 )
+
+    def publish_export(self, job, result, elapsed_ms):
+        source = Path(result["path"]).resolve()
+        if not source.is_relative_to(self.settings.data_dir.resolve()):
+            raise DomainError("INVALID_PATH", "Export artifact is outside storage", 403)
+        sha = file_hash(source)
+        suffix = ".zip" if result["media_type"] == "application/zip" else ".otio"
+        relative = Path("projects") / job["project_id"] / "exports" / f"{job['id']}-{sha}{suffix}"
+        destination = contained(self.settings.data_dir, relative)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.parent / f".{self.owner}-{job['attempt']}.partial"
+        try:
+            with source.open("rb") as reader, temporary.open("wb") as writer:
+                while chunk := reader.read(1024 * 1024):
+                    if not self.queue.heartbeat(job["id"], self.owner):
+                        raise Cancelled()
+                    writer.write(chunk)
+            if file_hash(temporary) != sha:
+                raise DomainError("HASH_MISMATCH", "Export copy changed", 500)
+            temporary.replace(destination)
+        finally:
+            temporary.unlink(missing_ok=True)
+        with self.database.transaction() as connection:
+            current = self.queue.get(connection, job["project_id"], job["id"])
+            if (
+                current["lease_owner"] != self.owner
+                or current["attempt"] != job["attempt"]
+                or current["lease_expires_at"] is None
+                or current["lease_expires_at"] < time.time()
+            ):
+                return
+            if current["state"] == "cancel_requested":
+                self.queue.set_state(connection, current, "cancelled")
+                return
+            self.queue.set_state(connection, current, "verifying", progress=90)
+            self.queue.set_state(
+                connection,
+                current,
+                "completed",
+                progress=100,
+                elapsed_ms=elapsed_ms,
+                artifact={
+                    "relative_path": relative.as_posix(),
+                    "filename": result["filename"],
+                    "media_type": result["media_type"],
+                    "sha256": sha,
+                    "size_bytes": destination.stat().st_size,
+                },
+            )
+            emit(
+                connection,
+                job["project_id"],
+                "export.completed",
+                {"job_id": job["id"], "sha256": sha},
+                job["id"],
+            )
 
 
 def main():

@@ -78,6 +78,7 @@ class ProviderConfig(Schema):
     allow_private_network: bool = False
     timeout_seconds: int = Field(default=60, ge=5, le=180)
     json_mode: bool = True
+    vision_enabled: bool = False
     video_seconds: int = Field(default=8, ge=1, le=30)
     video_size: str = Field(default="1280x720", pattern=r"^\d{2,4}x\d{2,4}$")
     video_poll_seconds: int = Field(default=3, ge=1, le=30)
@@ -303,7 +304,9 @@ class ProviderStore:
         config = self.runtime(kind)
         if not config["enabled"]:
             raise DomainError("MODEL_UNAVAILABLE", "Enable this provider in settings first", 422)
-        if CAPABILITIES[kind] != capability:
+        if CAPABILITIES[kind] != capability and not (
+            kind == "llm" and capability == "visual_review" and config.get("vision_enabled", False)
+        ):
             raise DomainError(
                 "CAPABILITY_UNSUPPORTED", "Provider category does not match operation", 422
             )

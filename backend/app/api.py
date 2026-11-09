@@ -276,6 +276,8 @@ def edit_plan(project_id: UUID, plan_id: UUID, body: PlanEdit, request: Request)
         if not row:
             raise DomainError("NOT_FOUND", "Plan not found", 404)
         plan = row["payload"]
+        if plan.get("type", "storyboard") != "storyboard":
+            raise DomainError("PLAN_TYPE_MISMATCH", "Use the matching plan approval endpoint", 409)
         service.check_revision(apr, plan["base_revision"])
         if plan["state"] != "proposed":
             raise DomainError("PLAN_EXECUTED", "Only proposed plans can be edited", 409)
@@ -310,7 +312,16 @@ def models(request: Request):
                 "availability": ("available" if verified else "unverified")
                 if config["enabled"]
                 else "disabled",
-                "capabilities": [CAPABILITIES[config["kind"]]] if verified else [],
+                "capabilities": (
+                    [CAPABILITIES[config["kind"]]]
+                    + (
+                        ["visual_review"]
+                        if config["kind"] == "llm" and config.get("vision_enabled")
+                        else []
+                    )
+                )
+                if verified
+                else [],
                 "provisional_capabilities": [] if verified else [CAPABILITIES[config["kind"]]],
                 "protocol": config.get("protocol", "openai-compatible"),
                 "health": config["health"],
@@ -356,13 +367,13 @@ def recover_remote(project_id: UUID, job_id: UUID, body: RemoteRecoveryRequest, 
 
 @router.get("/projects/{project_id}/jobs")
 def jobs(project_id: UUID, request: Request):
-    from app.execution.queue import serialize
+    from app.execution.queue import public_job, serialize
 
     service = engine(request)
     with service.database.engine.connect() as connection:
         service.load(connection, project_id)
         return [
-            serialize(row)
+            public_job(serialize(row))
             for row in connection.execute(
                 select(db.jobs).where(db.jobs.c.project_id == str(project_id))
             ).mappings()
@@ -371,11 +382,11 @@ def jobs(project_id: UUID, request: Request):
 
 @router.get("/projects/{project_id}/jobs/{job_id}")
 def job(project_id: UUID, job_id: UUID, request: Request):
-    from app.execution.queue import Queue
+    from app.execution.queue import Queue, public_job
 
     queue = Queue(request.app.state.database)
     with queue.database.engine.connect() as connection:
-        return queue.get(connection, project_id, job_id)
+        return public_job(queue.get(connection, project_id, job_id))
 
 
 @router.post("/projects/{project_id}/jobs/{job_id}/cancel")

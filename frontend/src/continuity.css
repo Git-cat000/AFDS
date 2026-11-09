@@ -1,0 +1,77 @@
+.continuity-panel {
+  display: grid;
+  gap: 18px;
+}
+.continuity-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.continuity-columns > article {
+  min-width: 0;
+}
+.continuity-panel form {
+  display: grid;
+  gap: 12px;
+}
+.continuity-panel label {
+  display: grid;
+  gap: 6px;
+}
+.continuity-panel .check-label {
+  display: flex;
+  align-items: center;
+}
+.continuity-panel .check-label input {
+  width: auto;
+}
+.continuity-choices {
+  border: 1px solid var(--border, #364151);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+.continuity-choices legend {
+  font-size: 13px;
+  color: var(--muted, #aeb9c9);
+}
+.continuity-fields {
+  display: grid;
+  gap: 8px;
+  padding: 8px 0 4px 20px;
+}
+.continuity-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+.continuity-row label {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+.continuity-row input,
+.continuity-row select {
+  width: 100%;
+}
+.continuity-diff {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  color: var(--muted, #aeb9c9);
+  margin: 6px 0 12px;
+  max-height: 180px;
+  overflow: auto;
+}
+.continuity-preview {
+  border-color: #8ba987;
+}
+.continuity-history {
+  flex-wrap: wrap;
+}
+@media (max-width: 950px) {
+  .continuity-columns {
+    grid-template-columns: 1fr;
+  }
+}

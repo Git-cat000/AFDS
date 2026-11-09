@@ -1,4 +1,4 @@
-# AFDS v0.3 API
+# AFDS v0.4 API
 
 Base path is `/api/v1`. The development API is available at `http://127.0.0.1:8000`. Interactive schemas are at `/docs` and `/openapi.json`.
 
@@ -83,7 +83,7 @@ Supported shot patch fields include `title`, `action`, `emotion`, `duration_fram
 | GET | `/projects/{pid}/assets/{aid}/file` | Safe media response with Range support |
 | GET | `/projects/{pid}/assets/{aid}/file?download=true` | Download attachment |
 
-Video providers are `mock-video-local` and a configured `openai-video`. The capability is `text_to_video`. Omitted provider IDs use configured defaults. Local shot duration must be between 1 and 30 seconds. Render requires valid selected media for every timeline placement. The worker normalizes clips, discards audio, concatenates and probes final output.
+Video providers are `mock-video-local` and a configured `openai-video`. The capability is `text_to_video`. Omitted provider IDs use configured defaults. Local shot duration must be between 1 and 30 seconds. Render requires valid selected media for every timeline placement. The worker normalizes clips, discards their original audio, concatenates video, mixes explicitly placed audio, burns captions and probes final output. Without placed audio, output remains silent.
 
 Job identity hashes the provider, adapter version, shot specification, format and style. Identical requests return the existing job. Completed cache hits report `reused_from_job_id` and verify file hashes before reactivating stale selections. The worker checks current input fingerprints before publishing, so obsolete output becomes a stale candidate and a `needs_review` job.
 
@@ -130,7 +130,7 @@ Example profile body follows. Model names and endpoint URLs come from the user's
 
 Blank or omitted `api_key` preserves the saved value. `clear_api_key=true` clears the current profile's credential. Existing queued jobs retain encrypted immutable connection revisions. Saving unchanged values preserves the revision. Conflicts return `CONFIG_CONFLICT` with 409.
 
-Advanced fields include `json_mode`, `video_seconds`, `video_size`, `video_poll_seconds`, `video_timeout_seconds`, `image_size` and `speech_voice`. The full request schema is available in OpenAPI. Connection tests verify model-list connectivity and authentication, with `generation_tested=false`.
+Advanced fields include `json_mode`, `video_seconds`, `video_size`, `video_poll_seconds`, `video_timeout_seconds`, `image_size`, `speech_voice` and LLM `vision_enabled` (default false). The full request schema is available in OpenAPI. Connection tests verify model-list connectivity and authentication, with `generation_tested=false`.
 
 ## Remote generation and recovery
 
@@ -171,3 +171,58 @@ LLM submission intent is persisted as pending before the network call. A crash l
 Policy edits and reconciliation use engine revision checks and ownership checks. Currency is fixed after the first ledger entry. Actual charges may exceed the cap and are still recorded; `over_budget` flags this. Unknown costs cannot be bounded by the numeric limit; both project permission and per-request remote consent are required. Estimates never become actual charges automatically.
 
 Errors include `BUDGET_EXCEEDED`, `UNKNOWN_COST_BLOCKED`, `PROJECT_REMOTE_BLOCKED`, `BUDGET_CURRENCY_MISMATCH`, `BUDGET_CURRENCY_LOCKED`, `CHARGE_NOT_PENDING`. Real-service acceptance tests are opt-in and explicitly skipped when unconfigured; see README.
+
+## Continuity and controlled semantic edits
+
+APR schema `0.2.0` adds `world_states` and `continuity_links`, audio tracks, captions and markers. Legacy `0.1.0` APRs receive defaults. Structure import assigns new IDs to all entities, clears selected media and audio placements, and retains caption/marker timing. ZIP restore is not implemented.
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/projects/{pid}/continuity` | Bibles, world states, shot references and dependency edges |
+| POST | `/projects/{pid}/continuity/preview` | `base_revision`, `entity_type`, optional `entity_id`, `delete`, `value`; persists a proposed plan and returns impact |
+| POST | `/projects/{pid}/continuity/plans/{plan_id}/execute` | Current `base_revision`, `approved=true`; apply the reviewed plan |
+| POST | `/projects/{pid}/semantic-edits` | Selected `shot_ids` (1–20), `mode=structured|llm`, explicit `fields` or a `message`; returns a bounded plan |
+| POST | `/projects/{pid}/semantic-edits/{plan_id}/execute` | Current `base_revision`, `approved=true`; execute the semantic plan |
+
+Continuity entity types are `character`, `location`, `world_state`, `shot_refs`, `scene_location` and `link`. All references must belong to the project. World states contain `scene_id`, optional `shot_id`, character costume/pose/emotion, props and environment attributes. Links contain `source_shot_id`, `target_shot_id`, `kind` and `note`. Full value schemas appear in OpenAPI.
+
+Semantic fields are restricted to `action`, `emotion`, `camera` and `duration_frames`. LLM mode requires `allow_remote=true` plus project privacy/budget permission. Output is validated, previewed and explicitly approved; it cannot directly mutate the project or generate media. Plans are revision-bound and cannot be executed through another plan type's route.
+
+Impact includes downstream continuity dependencies. Changed protected shots retain their selected versions and become `needs_review`; unaffected assets remain usable. Generation fingerprints include the reverse-reachable continuity content, even when the displayed prompt context is bounded.
+
+## Audio, captions and timing
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| PUT | `/projects/{pid}/timeline/composition` | `base_revision`, `audio_tracks`, `captions`, `markers`; replace composition while retaining the video backbone |
+| POST | `/projects/{pid}/timeline/audio/import` | Raw audio bytes; query `base_revision`, `name`, `rights_confirmed=true`; returns a Worker job with 202 |
+| POST | `/projects/{pid}/timeline/anchors/preview` | Propose timing from selected boundaries and markers or BPM |
+| POST | `/projects/{pid}/timeline/anchors/commit` | Same preview body plus `approved=true` and returned `preview_token` |
+
+There is one contiguous video track and up to 15 audio tracks, with 64 audio placements overall. Positions are project frames. Audio items have `asset_id`, `start_frame`, `source_start_frame`, `duration_frames`, `gain_db`; audio tracks add `id`, `name`, `muted`, `gain_db`, `items`. Source and timeline bounds are validated. Captions have `id`, `start_frame`, `duration_frames`, `text`. Markers have `id`, `frame`, `label`, `kind=beat|dialogue|note`.
+
+Audio import accepts WAV/MP3/FLAC/Ogg, at most 32 MB and one hour. The API stages bytes; the Worker verifies signatures, probes and converts to canonical PCM WAV. Owned immutable asset IDs are required for composition. Audio/caption edits invalidate only the final render. The output uses H.264 and optional 48 kHz stereo AAC, with frame-exact video duration.
+
+Anchor requests contain `base_revision`, `boundary_shot_ids`, optional `marker_ids`, optional `bpm` (20–300), `origin_frame` and `allow_protected` (false by default). Preview lists actual duration changes, all affected shots and protected descendants. Commit requires unchanged revision and preview token. Total duration remains fixed. Protected durations are skipped unless explicitly allowed. Markers are user supplied or generated from BPM; no automatic beat detection or transcription is performed.
+
+## Evidence reviews
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| POST | `/projects/{pid}/reviews` | `base_revision`, `shot_ids` (1–20), `mode=deterministic|vision`, `frame_count` (2–5), `allow_remote`; returns Worker jobs with 202 |
+| GET | `/projects/{pid}/reviews` | Persistent reports and current stale status |
+
+Deterministic mode probes media/duration and extracts keyframes. Semantic continuity is explicitly `not_run`. Vision mode requires an enabled, vision-capable LLM profile with `vision_enabled=true`, explicit remote consent and normal project budget/privacy authorization. It sends bounded keyframes, neighboring-shot evidence and text context through the configured compatible chat endpoint. Real provider support remains subject to opt-in acceptance.
+
+Reports bind asset/version hashes and source fingerprints, with timestamped frame asset IDs, checks, confidence and evidence indices. Model findings reject unknown fields/codes, non-finite confidence and references outside supplied frames. Publication is lease/attempt-fenced and never replaces selected footage. Reports become stale after relevant source changes. All reports require human judgment; sampled VLM output cannot establish full-duration action, lip sync or audio synchronization and never triggers automatic regeneration.
+
+## Portable exchange exports
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| POST | `/projects/{pid}/exports` | `base_revision`, `format=zip|otio`; queues an immutable snapshot export, 202 |
+| GET | `/projects/{pid}/exports/{job_id}/file` | Download a completed owned artifact after path and hash verification |
+
+Native OpenTimelineIO is a locked dependency. Missing native support returns `EXPORT_DEPENDENCY_MISSING`; the service does not substitute generic JSON. ZIP contains `project.apr.json`, `timeline.otio`, `manifest.json`, `README.txt` and hash-addressed `media/` files. Maximum uncompressed payload is 2 GB. Only project-owned, hash-verified assets are included. Settings, credentials, local paths, agent memory and runtime files are excluded. Public job responses omit internal staging/artifact paths.
+
+Standalone OTIO uses relative media references and does not contain the referenced media; download ZIP to obtain those files. Overlapping audio clips use parallel lanes. Captions, track mute and gain are retained as AFDS metadata/markers and may need manual application in receiving editors. APR remains the richer source of project semantics. No archive extraction/import endpoint is provided.

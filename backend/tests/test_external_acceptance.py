@@ -9,7 +9,7 @@ from conftest import project, storyboard
 pytestmark = pytest.mark.integration_external
 
 
-@pytest.mark.parametrize("kind", ["llm", "video"])
+@pytest.mark.parametrize("kind", ["llm", "video", "vision"])
 def test_configured_live_provider_acceptance(client, kind):
     if os.environ.get("AFDS_EXTERNAL_ACCEPTANCE") != "1":
         pytest.skip("Live acceptance not configured; explicitly set AFDS_EXTERNAL_ACCEPTANCE=1")
@@ -27,11 +27,12 @@ def test_configured_live_provider_acceptance(client, kind):
     if not Path(source_settings.database_url.removeprefix("sqlite:///")).exists():
         pytest.skip("No locally configured provider database")
     source = Database(source_settings)
+    connection_kind = "llm" if kind == "vision" else kind
     try:
         from app.errors import DomainError
 
         try:
-            config = ProviderStore(source).runtime(kind)
+            config = ProviderStore(source).runtime(connection_kind)
         except DomainError as error:
             if error.code == "MODEL_UNAVAILABLE":
                 pytest.skip("Selected provider is not configured locally")
@@ -40,10 +41,12 @@ def test_configured_live_provider_acceptance(client, kind):
         source.engine.dispose()
     if not config["enabled"]:
         pytest.skip("Selected live connection is disabled")
+    if kind == "vision" and not config.get("vision_enabled"):
+        pytest.skip("Vision use of the selected LLM connection is not enabled")
     # Copy only the selected connection into the isolated test database; no secret is printed.
     fields = {key: value for key, value in config.items() if key in ProviderConfig.model_fields}
     fields.update(revision=0, api_key=config["api_key"])
-    saved = client.put(f"/api/v1/settings/providers/{kind}", json=fields)
+    saved = client.put(f"/api/v1/settings/providers/{connection_kind}", json=fields)
     assert saved.status_code == 200, "Could not copy selected provider configuration"
     apr = project(client) if kind == "llm" else storyboard(client)
     pid = apr["project_id"]
@@ -74,6 +77,31 @@ def test_configured_live_provider_acceptance(client, kind):
             "Live LLM request failed; inspect the sanitized API error locally"
         )
         assert 1 <= len(result.json()["shots"]) <= 20
+    elif kind == "vision":
+        generated = client.post(
+            f"/api/v1/projects/{pid}/generate",
+            json={
+                "base_revision": apr["revision"],
+                "provider_id": "mock-video-local",
+                "shot_ids": [apr["shots"][0]["id"]],
+            },
+        )
+        assert generated.status_code == 202
+        Worker(client.app.state.database).run_once()
+        apr = client.get(f"/api/v1/projects/{pid}/apr").json()
+        result = client.post(
+            f"/api/v1/projects/{pid}/reviews",
+            json={
+                "base_revision": apr["revision"],
+                "shot_ids": [apr["shots"][0]["id"]],
+                "mode": "vision",
+                "allow_remote": True,
+            },
+        )
+        assert result.status_code == 202, "Live vision request could not be queued"
+        Worker(client.app.state.database).run_once()
+        report = client.get(f"/api/v1/projects/{pid}/reviews").json()
+        assert report and report[0]["mode"] == "vision", "Live vision review failed"
     else:
         result = client.post(
             f"/api/v1/projects/{pid}/generate",
