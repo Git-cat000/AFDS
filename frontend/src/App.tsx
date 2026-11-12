@@ -36,6 +36,8 @@ import { ProjectBudget } from "./ProjectBudget";
 import { ContinuityPanel } from "./ContinuityPanel";
 import { ReviewPanel } from "./ReviewPanel";
 import { TimelineEditor } from "./TimelineEditor";
+import { BackupRestorePanel } from "./BackupRestorePanel";
+import { OperationsDashboard } from "./OperationsDashboard";
 import type {
   ChangeSet,
   Job,
@@ -282,6 +284,13 @@ export function App() {
           </>
         )}
         <button
+          className={`nav ${tab === "operations" ? "active" : ""}`}
+          onClick={() => setTab("operations")}
+        >
+          <RefreshCw size={18} />
+          运行概览
+        </button>
+        <button
           className={`nav ${tab === "providers" ? "active" : ""}`}
           onClick={() => setTab("providers")}
         >
@@ -290,7 +299,7 @@ export function App() {
         </button>
         <div className="rail-bottom">
           <span className="online-dot" />
-          本地工作区<small>v0.4 · FILM STUDIO</small>
+          本地工作区<small>v0.5 · FILM STUDIO</small>
         </div>
       </aside>
       <main className="workspace">
@@ -327,6 +336,8 @@ export function App() {
         )}
         {tab === "providers" ? (
           <ProviderSettings />
+        ) : tab === "operations" ? (
+          <OperationsDashboard projectId={projectId || undefined} />
         ) : !projectId ? (
           <section className="page dashboard">
             <p className="eyebrow">YOUR NEXT FILM STARTS HERE</p>
@@ -336,36 +347,45 @@ export function App() {
               <em>变成一组镜头。</em>
             </h1>
             <div className="dashboard-grid">
-              <form className="panel create-project" onSubmit={create}>
-                <h2>开始新的创作</h2>
-                <label>
-                  项目名称
-                  <input
-                    aria-label="项目名称"
-                    name="title"
-                    required
-                    maxLength={200}
-                    placeholder="例如，雨夜告别"
-                  />
-                </label>
-                <label>
-                  创作简述
-                  <textarea
-                    aria-label="创作简述"
-                    name="brief"
-                    rows={5}
-                    maxLength={10000}
-                    placeholder="故事发生在哪里？谁在场？你希望观众感受到什么？"
-                  />
-                </label>
-                <div className="format-note">
-                  <Film size={16} />
-                  1280 × 720 · 24 fps · 四镜头演示
-                </div>
-                <button className="primary" disabled={busy}>
-                  创建项目 <ArrowRight size={16} />
-                </button>
-              </form>
+              <div className="project-start">
+                <form className="panel create-project" onSubmit={create}>
+                  <h2>开始新的创作</h2>
+                  <label>
+                    项目名称
+                    <input
+                      aria-label="项目名称"
+                      name="title"
+                      required
+                      maxLength={200}
+                      placeholder="例如，雨夜告别"
+                    />
+                  </label>
+                  <label>
+                    创作简述
+                    <textarea
+                      aria-label="创作简述"
+                      name="brief"
+                      rows={5}
+                      maxLength={10000}
+                      placeholder="故事发生在哪里？谁在场？你希望观众感受到什么？"
+                    />
+                  </label>
+                  <div className="format-note">
+                    <Film size={16} />
+                    1280 × 720 · 24 fps · 四镜头演示
+                  </div>
+                  <button className="primary" disabled={busy}>
+                    创建项目 <ArrowRight size={16} />
+                  </button>
+                </form>
+                <BackupRestorePanel
+                  onQueued={(job) => {
+                    selectProject(job.project_id);
+                    setTab("jobs");
+                    void queryClient.invalidateQueries();
+                  }}
+                />
+              </div>
               <section className="recent">
                 <h2>最近的项目</h2>
                 {projects.isLoading && (
@@ -792,6 +812,7 @@ export function App() {
                               import_audio: "导入音频素材",
                               review_shot: "镜头审片与证据",
                               export_project: "导出工程",
+                              restore_project: "恢复工程副本",
                             }[j.operation] || "时间轴 · 渲染成片"}
                       </h3>
                       <small>

@@ -225,4 +225,25 @@ Reports bind asset/version hashes and source fingerprints, with timestamped fram
 
 Native OpenTimelineIO is a locked dependency. Missing native support returns `EXPORT_DEPENDENCY_MISSING`; the service does not substitute generic JSON. ZIP contains `project.apr.json`, `timeline.otio`, `manifest.json`, `README.txt` and hash-addressed `media/` files. Maximum uncompressed payload is 2 GB. Only project-owned, hash-verified assets are included. Settings, credentials, local paths, agent memory and runtime files are excluded. Public job responses omit internal staging/artifact paths.
 
-Standalone OTIO uses relative media references and does not contain the referenced media; download ZIP to obtain those files. Overlapping audio clips use parallel lanes. Captions, track mute and gain are retained as AFDS metadata/markers and may need manual application in receiving editors. APR remains the richer source of project semantics. No archive extraction/import endpoint is provided.
+Standalone OTIO uses relative media references and does not contain the referenced media; download ZIP to obtain those files. Overlapping audio clips use parallel lanes. Captions, track mute and gain are retained as AFDS metadata/markers and may need manual application in receiving editors. APR remains the richer source of project semantics.
+
+## Portable project recovery
+
+`POST /projects/restore?request_id=<uuid>&title=<new-copy-title>&approved=true` accepts raw ZIP bytes (`Content-Type: application/zip`), not multipart or base64. A 202 public job includes the new destination `project_id`. Keep the request UUID unchanged when retrying an uncertain upload. Identical UUID, archive SHA-256 and title return the same destination/job; different input returns 409 `RESTORE_REQUEST_CONFLICT`.
+
+The API stages at most 2 GB and atomically creates a new empty project and `restore_project` job. Only the independent Worker parses media. It accepts AFDS export format 0.2.0, verifies APR/manifest snapshot hashes, native OTIO and all owned media, and rejects traversal, links, duplicate names/JSON keys, unexpected members, missing assets and unsupported formats. Limits: 2 GB compressed and total uncompressed, 16 MB per metadata/central directory, 10,004 ZIP members. Public responses omit staging paths.
+
+Recovery remaps all entity IDs while preserving selected/locked/approved assets, audio composition, captions and markers. It never overwrites the original. A new revision lineage and zero budget are created with remote content sharing and unknown costs disabled. Credentials, task/revision/review history and cost ledger are excluded; historical provider bills are not cancelled. The job receipt identifies the source snapshot and asset counts. No provider call occurs.
+
+Final publication rechecks lease owner, attempt, expiry, cancellation and destination revision. Media rows, APR revision and job completion publish in one short transaction. Editing the destination during recovery causes a revision conflict. Failed/cancelled jobs leave their destination visible and can use normal cancel/retry routes. Completed retries verify media integrity without restoring an obsolete APR state. Interrupted immutable files may remain unregistered; no automatic broad cleanup occurs.
+
+## Local operations
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/system/status` | Local DB/schema, Worker liveness, FFmpeg/ffprobe/native OTIO availability and disk capacity |
+| GET | `/projects/{pid}/operations` | Owned project task counts, recent runtime percentiles, registered media totals, budget summary and bounded lineage graph |
+
+Status is `ok` or `degraded`, deployment is `local_single_user`. Worker status is `online`, `offline` or `unknown`, with online count and last-seen age; idle pulses every 5 seconds, active lease heartbeats also pulse, stale after 15 seconds. Missing dependencies and unavailable data are reported explicitly. Responses exclude filesystem paths, owner IDs, prompts, credentials and raw upstream errors; diagnostics make no external calls.
+
+Project counts cover all jobs; elapsed p50/p95 use the most recent 200 jobs with elapsed measurements. Graph nodes cover up to 50 recent jobs and 100 input media, with explicit `truncated`. `media` edges connect observed producers/consumers or existing media; `dependency` edges reflect declared dependencies. `relationship=observed_media_lineage` does not imply queue blockage. Media totals count registered owned files, not a full storage scan. Routes are read-only and follow the existing local project ownership boundary.

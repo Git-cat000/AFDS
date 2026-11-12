@@ -145,6 +145,7 @@ export type Plan = {
   estimated_cost: { status: string; amount: number | null };
 };
 export type Job = {
+  project_id: string;
   artifact?: {
     filename: string;
     media_type: string;

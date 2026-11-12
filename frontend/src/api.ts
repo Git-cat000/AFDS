@@ -1,3 +1,5 @@
+import type { Job } from "./types";
+
 export class ApiError extends Error {
   constructor(
     public code: string,
@@ -88,4 +90,31 @@ export async function api<T>(
 
 export function mediaUrl(projectId: string, assetId: string, download = false) {
   return `/api/v1/projects/${projectId}/assets/${assetId}/file${download ? "?download=true" : ""}`;
+}
+
+export async function restoreArchive(
+  file: File,
+  title: string,
+  requestId: string,
+): Promise<Job> {
+  const params = new URLSearchParams({
+    title,
+    request_id: requestId,
+    approved: "true",
+  });
+  const response = await fetch(`/api/v1/projects/restore?${params}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/zip" },
+    body: file,
+  });
+  const data = await response.json();
+  if (!response.ok)
+    throw new ApiError(
+      data.error?.code || "HTTP_ERROR",
+      data.error?.message || "工程包上传失败",
+      data.error?.details,
+    );
+  if (!data.id || !data.project_id)
+    throw new Error("Restore response is uncertain");
+  return data;
 }

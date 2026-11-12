@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "afds"
-version = "0.4.0"
+version = "0.5.0"
 requires-python = ">=3.11"
 dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.34,<1", "pydantic>=2.10,<3", "pydantic-settings>=2.7,<3", "sqlalchemy>=2.0,<2.1", "alembic>=1.14,<2", "pillow>=11,<13", "httpx>=0.28,<1", "cryptography>=44,<50", "opentimelineio==0.18.1"]
 
