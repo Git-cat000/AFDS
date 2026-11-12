@@ -72,8 +72,23 @@ def execute_remote_media(queue, job, owner, work, checkpoint):
     try:
         if config.get("protocol") == "comfyui":
             from app.comfy_adapter import generate_comfy
+            from app.storage import asset_path, file_hash
 
-            result = generate_comfy(transport, config, job, work, checkpoint, persist, settings)
+            reference_files = {}
+            if not job.get("external_task_id") and not job.get("submission_started"):
+                for role, item in job["request"].get("reference_images", {}).items():
+                    source = asset_path(queue.database, job["project_id"], item["asset_id"])
+                    if (
+                        source.stat().st_size > 64 * 1024 * 1024
+                        or file_hash(source) != item["sha256"]
+                    ):
+                        raise DomainError(
+                            "HASH_MISMATCH", "Reference image integrity check failed", 422
+                        )
+                    reference_files[role] = source
+            result = generate_comfy(
+                transport, config, job, work, checkpoint, persist, settings, reference_files
+            )
         elif job["operation"] == "generate_video":
             result = generate_video(transport, config, job, work, checkpoint, persist, settings)
         else:

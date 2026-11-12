@@ -51,7 +51,7 @@ def validate_workflow(config):
     }
 
 
-def build_prompt(config, request):
+def build_prompt(config, request, reference_names=None):
     from app.remote_media import prompt_for_shot
 
     template = WorkflowTemplate.model_validate(config["workflow"])
@@ -64,8 +64,10 @@ def build_prompt(config, request):
         "frames": request.get("duration_frames", 1),
         "fps": request["format"]["fps_num"] / request["format"]["fps_den"],
     }
+    values.update(reference_names or {})
     for name, binding in template.bindings.items():
-        graph[binding.node_id]["inputs"][binding.input_name] = values[name]
+        if name in values:
+            graph[binding.node_id]["inputs"][binding.input_name] = values[name]
     return graph
 
 
@@ -100,7 +102,55 @@ def output_file(record, template):
         ) from error
 
 
-def generate_comfy(transport, config, job, work, checkpoint, persist, settings):
+def upload_references(transport, job, work, checkpoint, reference_files):
+    from app.image_service import canonical_image
+
+    names, uploaded = {}, {}
+    folder = f"afds/{job['project_id']}/{job['id']}"
+    for role, source in (reference_files or {}).items():
+        digest = job["request"]["reference_images"][role]["sha256"]
+        if digest not in uploaded:
+            if not checkpoint():
+                raise Cancelled()
+            canonical = work / f"reference-{role}.png"
+            canonical_image(source, canonical)
+            if canonical.stat().st_size > 64 * 1024 * 1024:
+                raise ProviderError(
+                    "REFERENCE_UPLOAD_INVALID",
+                    "Reference image exceeds supported size",
+                    rejected=True,
+                )
+            response = transport.json(
+                "POST",
+                "upload/image",
+                multipart={
+                    "image": (f"afds-{digest}.png", canonical.read_bytes(), "image/png"),
+                    "type": "input",
+                    "subfolder": folder,
+                    "overwrite": "false",
+                },
+                checkpoint=checkpoint,
+            )
+            name = response.get("name")
+            if (
+                response.get("type") != "input"
+                or response.get("subfolder") != folder
+                or not isinstance(name, str)
+                or not re.fullmatch(r"[A-Za-z0-9_. ()-]{1,180}\.png", name)
+            ):
+                raise ProviderError(
+                    "REFERENCE_UPLOAD_INVALID",
+                    "Server returned an invalid reference image location",
+                    rejected=True,
+                )
+            uploaded[digest] = f"{folder}/{name}"
+        names[role] = uploaded[digest]
+    return names
+
+
+def generate_comfy(
+    transport, config, job, work, checkpoint, persist, settings, reference_files=None
+):
     template = WorkflowTemplate.model_validate(config["workflow"])
     prompt_id = job.get("external_task_id")
     if not prompt_id:
@@ -109,11 +159,15 @@ def generate_comfy(transport, config, job, work, checkpoint, persist, settings):
                 "REMOTE_SUBMISSION_UNCERTAIN", "Restore the known ComfyUI prompt ID before retrying"
             )
         validate_workflow(config)
+        reference_names = upload_references(transport, job, work, checkpoint, reference_files)
         persist(submission_started=True)
         result = transport.json(
             "POST",
             "prompt",
-            payload={"prompt": build_prompt(config, job["request"]), "client_id": job["id"]},
+            payload={
+                "prompt": build_prompt(config, job["request"], reference_names),
+                "client_id": job["id"],
+            },
             checkpoint=checkpoint,
         )
         prompt_id = result.get("prompt_id")

@@ -173,6 +173,17 @@ worker_heartbeats = Table(
     Column("last_seen_at", Float, nullable=False),
 )
 
+creative_feedback = Table(
+    "creative_feedback",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("project_id", ForeignKey("projects.id"), nullable=False, index=True),
+    Column("shot_id", ForeignKey("shots.id"), nullable=False),
+    Column("version_id", ForeignKey("asset_versions.id"), nullable=False),
+    Column("created_at", Float, nullable=False),
+    Column("payload", JSON, nullable=False),
+)
+
 
 class Database:
     def __init__(self, settings: Settings):

@@ -32,6 +32,8 @@ def source_backup(request):
         value["world_states"] = [{"id": state, "scene_id": apr["scenes"][0]["id"]}]
         value["scenes"][0]["location_id"] = location
         value["shots"][0].update(character_ids=[character], input_state_ref=state)
+        image = next(asset for asset in value["assets"] if asset["media_type"] == "image")
+        value["shots"][0]["reference_images"] = {"reference_image": image["id"]}
         audio = next(a for a in value["assets"] if a["media_type"] == "audio")
         value["timeline"]["tracks"].append(
             {
@@ -119,6 +121,11 @@ def test_roundtrip_preserves_media_references_and_can_render_without_source(
     assert restored["asset_versions"][0]["generated_by_job_id"] == job["id"]
     assert restored["shots"][0]["character_ids"] == [restored["characters"][0]["id"]]
     assert restored["shots"][0]["input_state_ref"] == restored["world_states"][0]["id"]
+    reference = restored["shots"][0]["reference_images"]["reference_image"]
+    assert reference != original["shots"][0]["reference_images"]["reference_image"]
+    assert any(
+        asset["id"] == reference and asset["media_type"] == "image" for asset in restored["assets"]
+    )
     assert restored["scenes"][0]["location_id"] == restored["locations"][0]["id"]
     assert restored["timeline"]["tracks"][1]["items"][0]["gain_db"] == -6
     assert restored["timeline"]["captions"][0]["text"] == "DEMO / MOCK"

@@ -374,6 +374,10 @@ class RestoreService:
                 ),
                 ("character_ids",),
             )
+            item["reference_images"] = {
+                role: mapping[identifier]
+                for role, identifier in item.get("reference_images", {}).items()
+            }
         for collection in ("characters", "locations"):
             for item in result[collection]:
                 fields(item, ("id",), ("reference_asset_ids",))

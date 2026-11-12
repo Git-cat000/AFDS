@@ -15,7 +15,20 @@ class NodeBinding(Schema):
 
 class WorkflowTemplate(Schema):
     graph: dict[str, dict[str, Any]] = Field(min_length=1, max_length=300)
-    bindings: dict[Literal["prompt", "seed", "width", "height", "frames", "fps"], NodeBinding]
+    bindings: dict[
+        Literal[
+            "prompt",
+            "seed",
+            "width",
+            "height",
+            "frames",
+            "fps",
+            "reference_image",
+            "start_image",
+            "end_image",
+        ],
+        NodeBinding,
+    ]
     output_node: str = Field(min_length=1, max_length=100)
     output_field: Literal["images", "gifs", "videos"] = "images"
     media_type: Literal["image", "video"] = "image"
@@ -45,11 +58,15 @@ class WorkflowTemplate(Schema):
                 ):
                     raise ValueError("Invalid workflow node link")
         targets = set()
-        for binding in self.bindings.values():
+        for role, binding in self.bindings.items():
             node = self.graph.get(binding.node_id, {})
             value = node.get("inputs", {}).get(binding.input_name)
             target = (binding.node_id, binding.input_name)
             if value is None or isinstance(value, (list, dict, bool)) or target in targets:
                 raise ValueError("Map each input to a distinct existing literal node input")
+            if role in {"reference_image", "start_image", "end_image"} and not isinstance(
+                value, str
+            ):
+                raise ValueError("Image roles require string filename inputs")
             targets.add(target)
         return self

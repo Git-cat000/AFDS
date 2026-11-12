@@ -186,6 +186,8 @@ def _upstream_digest(apr, shot_id):
                 "type": "shot",
                 "content": {field: shot.get(field) for field in content_fields},
             }
+            if shot.get("reference_images"):
+                nodes[shot["id"]]["content"]["reference_images"] = shot["reference_images"]
     digest = hashlib.sha256()
     for identifier in sorted(nodes):
         digest.update(json.dumps(nodes[identifier], sort_keys=True, ensure_ascii=False).encode())
@@ -543,7 +545,7 @@ class ContinuityService:
         )
 
 
-def _remote_semantic(config, apr, shots, message):
+def _remote_semantic(config, apr, shots, message, checkpoint=lambda: True):
     from app.provider_http import ProviderHTTP
 
     context = {
@@ -577,7 +579,7 @@ def _remote_semantic(config, apr, shots, message):
     if config["json_mode"]:
         payload["response_format"] = {"type": "json_object"}
     result = ProviderHTTP(config).json(
-        "POST", "chat/completions", payload=payload, limit=256 * 1024
+        "POST", "chat/completions", payload=payload, limit=256 * 1024, checkpoint=checkpoint
     )
     try:
         content = result["choices"][0]["message"]["content"]

@@ -19,8 +19,16 @@ SHOT_FIELDS = {
     "locked",
     "status",
     "active_asset_version_id",
+    "reference_images",
 }
-SPEC_FIELDS = {"action", "emotion", "duration_frames", "camera.shot_size", "camera.movement"}
+SPEC_FIELDS = {
+    "action",
+    "emotion",
+    "duration_frames",
+    "camera.shot_size",
+    "camera.movement",
+    "reference_images",
+}
 
 
 def validate(apr):
@@ -458,6 +466,7 @@ class ProjectEngine:
             shot["scene_id"] = remap[shot["scene_id"]]
             shot["character_ids"] = [remap[c] for c in shot["character_ids"]]
             shot["active_asset_version_id"] = None
+            shot["reference_images"] = {}
             shot["status"], shot["locked"] = "draft", False
             for field in ("input_state_ref", "output_state_ref"):
                 if shot.get(field):

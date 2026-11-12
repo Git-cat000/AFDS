@@ -28,6 +28,10 @@ OPERATIONS = {
     "review_shot",
     "export_project",
     "restore_project",
+    "plan_storyboard",
+    "plan_semantic",
+    "import_image",
+    "cleanup_storage",
 }
 
 
@@ -150,6 +154,7 @@ class OperationsService:
                     payload["request"]["asset_id"].as_string().label("asset_id"),
                     payload["request"]["neighbors"].label("neighbors"),
                     payload["request"]["asset_manifest"].label("asset_manifest"),
+                    payload["request"]["reference_images"].label("reference_images"),
                 )
                 .where(db.jobs.c.project_id == str(project_id))
                 .order_by(payload["created_at"].as_float().desc(), db.jobs.c.id)
@@ -248,6 +253,11 @@ class OperationsService:
                 else:
                     truncated = True
             inputs = {row["asset_id"]} if row["asset_id"] else set()
+            inputs.update(
+                item["asset_id"]
+                for item in (row["reference_images"] or {}).values()
+                if isinstance(item, dict) and item.get("asset_id")
+            )
             for key in ("items", "audio_items", "neighbors", "asset_manifest"):
                 inputs.update(
                     item["asset_id"]

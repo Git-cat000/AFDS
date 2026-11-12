@@ -7,13 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
+from app import APP_VERSION, APR_SCHEMA_VERSION
 from app.config import Settings
 from app.errors import DomainError
 
 
 def create_app(settings: Settings | None = None):
     config = settings or Settings()
-    application = FastAPI(title="AFDS", version="0.5.1")
+    application = FastAPI(title="AFDS", version=APP_VERSION)
     application.state.settings = config
     from app.db import Database
 
@@ -83,8 +84,20 @@ def create_app(settings: Settings | None = None):
 
     @application.get("/api/v1/version")
     def version():
-        return {"version": "0.5.1", "apr_schema_version": "0.2.0"}
+        return {"version": APP_VERSION, "apr_schema_version": APR_SCHEMA_VERSION}
 
+    from app.history_api import router as history_router
+
+    application.include_router(history_router, prefix="/api/v1")
+    from app.planning_api import router as planning_router
+
+    application.include_router(planning_router, prefix="/api/v1")
+    from app.image_api import router as image_router
+
+    application.include_router(image_router, prefix="/api/v1")
+    from app.feedback_api import router as feedback_router
+
+    application.include_router(feedback_router, prefix="/api/v1")
     from app.api import router
 
     application.include_router(router, prefix="/api/v1")

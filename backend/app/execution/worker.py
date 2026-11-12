@@ -58,7 +58,15 @@ class Worker:
             def checkpoint():
                 return self.queue.heartbeat(job["id"], self.owner)
 
-            if job["operation"] == "generate_video":
+            if job["operation"] in {"plan_storyboard", "plan_semantic"}:
+                from app.planning_service import PlanningService
+                from app.remote_media import remote_lease
+
+                with remote_lease(self.queue, job, self.owner) as planning_checkpoint:
+                    result = PlanningService(self.database).execute(
+                        job, self.owner, planning_checkpoint
+                    )
+            elif job["operation"] == "generate_video":
                 if job["provider_id"] == "mock-video-local":
                     adapter = video_adapter(self.settings, job["provider_id"])
                     result = adapter.generate(job["request"], output, checkpoint)
@@ -70,6 +78,10 @@ class Worker:
                 from app.audio_pipeline import process_audio_import
 
                 result = process_audio_import(self.settings, job["request"], work, checkpoint)
+            elif job["operation"] == "import_image":
+                from app.image_service import process_image
+
+                result = process_image(self.settings, job, work, checkpoint)
             elif job["operation"] == "review_shot":
                 from app.remote_media import remote_lease
                 from app.review_service import ReviewService
@@ -115,7 +127,11 @@ class Worker:
                     )
                     result["video"] = mixed
             elapsed_ms = int((time.monotonic() - started) * 1000)
-            if job["operation"] == "review_shot":
+            if job["operation"] in {"plan_storyboard", "plan_semantic"}:
+                from app.planning_service import PlanningService
+
+                PlanningService(self.database).publish(job, self.owner, result, elapsed_ms)
+            elif job["operation"] == "review_shot":
                 from app.review_service import ReviewService
 
                 ReviewService(self.database).publish(job, self.owner, result, elapsed_ms)
@@ -204,7 +220,9 @@ class Worker:
             }
             if "normalization" in result:
                 provenance["normalization"] = result["normalization"]
-            if job["operation"] == "import_audio":
+            if job["request"].get("reference_images"):
+                provenance["reference_images"] = job["request"]["reference_images"]
+            if job["operation"] in {"import_audio", "import_image"}:
                 provenance.update(
                     name=job["request"]["name"],
                     rights_confirmed=True,
@@ -284,7 +302,12 @@ class Worker:
                     shot["active_asset_version_id"] = version["id"]
                     shot["status"] = "ready"
                     apr["render_status"] = "stale"
-            elif job["operation"] in {"generate_image", "generate_speech", "import_audio"}:
+            elif job["operation"] in {
+                "generate_image",
+                "generate_speech",
+                "import_audio",
+                "import_image",
+            }:
                 fresh = True
             else:
                 try:

@@ -97,7 +97,10 @@ class ProviderHTTP:
         if payload is not None:
             arguments["json"] = payload
         if multipart is not None:
-            arguments["files"] = {key: (None, str(value)) for key, value in multipart.items()}
+            arguments["files"] = {
+                key: value if isinstance(value, tuple) else (None, str(value))
+                for key, value in multipart.items()
+            }
 
         async def perform():
             async with httpx.AsyncClient(

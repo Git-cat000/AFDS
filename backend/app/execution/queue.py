@@ -65,6 +65,11 @@ def shot_request(apr, shot, provider_config=None):
             adapter_version="0.2.0",
             provider_config=provider_config,
         )
+    if shot.get("reference_images"):
+        request["reference_images"] = {
+            role: {"asset_id": identifier, "sha256": find(apr["assets"], identifier)["sha256"]}
+            for role, identifier in shot["reference_images"].items()
+        }
     return request
 
 
@@ -132,9 +137,9 @@ class Queue:
             raise DomainError("NOT_FOUND", "Job not found in this project", 404)
         return serialize(row)
 
-    def enqueue(self, connection, apr, operation, request, target=None):
+    def enqueue(self, connection, apr, operation, request, target=None, idempotency_key=None):
         fingerprint = digest(request)
-        key = f"{apr['project_id']}:{operation}:{fingerprint}"
+        key = idempotency_key or f"{apr['project_id']}:{operation}:{fingerprint}"
         existing = (
             connection.execute(select(db.jobs).where(db.jobs.c.idempotency_key == key))
             .mappings()
@@ -204,6 +209,15 @@ class Queue:
         return self.get(connection, apr["project_id"], jid)
 
     def reactivate(self, connection, apr, job):
+        if job["operation"] in {"plan_storyboard", "plan_semantic"}:
+            if not connection.execute(
+                select(db.plans.c.id).where(
+                    db.plans.c.id == job.get("result_plan_id"),
+                    db.plans.c.project_id == apr["project_id"],
+                )
+            ).first():
+                raise DomainError("CACHE_PLAN_INVALID", "Planning result is missing", 409)
+            return
         for asset_id in job["output_asset_ids"]:
             row = (
                 connection.execute(
@@ -227,6 +241,7 @@ class Queue:
             "generate_image",
             "generate_speech",
             "import_audio",
+            "import_image",
             "review_shot",
             "restore_project",
         }:
@@ -277,6 +292,17 @@ class Queue:
             result = []
             for sid in dict.fromkeys(body.shot_ids):
                 shot = find(apr["shots"], sid)
+                references = shot.get("reference_images", {})
+                bindings = ((config or {}).get("workflow") or {}).get("bindings", {})
+                if references and (
+                    (config or {}).get("protocol") != "comfyui"
+                    or not set(references) <= set(bindings)
+                ):
+                    raise DomainError(
+                        "REFERENCE_INPUT_UNSUPPORTED",
+                        "Select a ComfyUI workflow with bindings for every selected image role",
+                        422,
+                    )
                 request = shot_request(apr, shot, config)
                 seconds = Format(**apr["format"]).seconds(shot["duration_frames"])
                 if not 1 <= seconds <= 30:
@@ -414,6 +440,20 @@ class Queue:
                 apr["revision"] += 1
                 self.engine.save(connection, apr, before, "Reactivate cached render", "user")
             return result
+
+    def check_owned(self, connection, job, owner):
+        from app.media import Cancelled
+
+        current = self.get(connection, job["project_id"], job["id"])
+        if (
+            current["lease_owner"] != owner
+            or current["attempt"] != job["attempt"]
+            or not current["lease_expires_at"]
+            or current["lease_expires_at"] < time.time()
+            or current["state"] not in {"running", "verifying"}
+        ):
+            raise Cancelled()
+        return current
 
     def set_state(self, connection, job, target, **payload_updates):
         transition(job["state"], target)

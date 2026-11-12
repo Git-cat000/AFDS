@@ -62,6 +62,9 @@ class Shot(Schema):
     ] = "draft"
     locked: bool = False
     active_asset_version_id: UUID | None = None
+    reference_images: dict[Literal["reference_image", "start_image", "end_image"], UUID] = Field(
+        default_factory=dict, max_length=3
+    )
 
 
 class Scene(Schema):
@@ -134,7 +137,7 @@ class BudgetPolicy(Schema):
 
 
 class APR(ProjectCreate):
-    apr_schema_version: Literal["0.1.0", "0.2.0"] = "0.2.0"
+    apr_schema_version: Literal["0.1.0", "0.2.0", "0.3.0"] = "0.3.0"
     project_id: UUID = Field(default_factory=uuid4)
     revision: int = Field(default=1, ge=1)
     status: Literal["draft", "ready", "archived"] = "draft"
@@ -229,6 +232,10 @@ class APR(ProjectCreate):
                 raise ValueError("Missing poster asset")
             if version["asset_id"] not in assets or UUID(version["shot_id"]) not in shots:
                 raise ValueError("Asset version reference is invalid")
+        images = {asset["id"] for asset in self.assets if asset["media_type"] == "image"}
+        for shot in self.shots:
+            if any(str(identifier) not in images for identifier in shot.reference_images.values()):
+                raise ValueError("Shot references must be owned image assets")
         if self.render_asset_id and str(self.render_asset_id) not in assets:
             raise ValueError("Missing render asset")
         from app.continuity import validate_continuity
@@ -236,7 +243,7 @@ class APR(ProjectCreate):
 
         validate_timeline(self.model_dump(mode="json"))
         validate_continuity(self.model_dump(mode="json"))
-        self.apr_schema_version = "0.2.0"
+        self.apr_schema_version = "0.3.0"
         return self
 
 

@@ -1,6 +1,8 @@
 import io
 import json
 import threading
+from email import policy
+from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
@@ -34,6 +36,9 @@ def comfy_server():
         "filename": "output.png",
         "output_field": "images",
         "failed": False,
+        "extra_info": {},
+        "uploads": [],
+        "bad_upload": False,
     }
 
     class Handler(BaseHTTPRequestHandler):
@@ -42,12 +47,36 @@ def comfy_server():
 
         def respond(self):
             raw = self.rfile.read(int(self.headers.get("Content-Length", "0")))
-            state["requests"].append((self.command, self.path, json.loads(raw) if raw else None))
+            multipart = self.headers.get("Content-Type", "").startswith("multipart/")
+            state["requests"].append(
+                (self.command, self.path, raw if multipart else (json.loads(raw) if raw else None))
+            )
             path = urlsplit(self.path).path
             if path == "/object_info":
                 data = {
                     "Text": {"input": {"required": {"text": ["STRING", {}]}}},
                     "Save": {"output_node": not state["missing"]},
+                }
+                data.update(state["extra_info"])
+            elif path == "/upload/image":
+                parsed = BytesParser(policy=policy.default).parsebytes(
+                    (
+                        f"Content-Type: {self.headers['Content-Type']}\r\nMIME-Version: 1.0\r\n\r\n"
+                    ).encode()
+                    + raw
+                )
+                parts = {
+                    part.get_param("name", header="content-disposition"): part
+                    for part in parsed.iter_parts()
+                }
+                image = parts["image"].get_payload(decode=True)
+                state["uploads"].append(image)
+                data = {
+                    "name": parts["image"].get_filename(),
+                    "type": "input",
+                    "subfolder": "../outside"
+                    if state["bad_upload"]
+                    else parts["subfolder"].get_payload(decode=True).decode(),
                 }
             elif path == "/prompt":
                 data = {"prompt_id": "comfy-task-123", "number": 1, "node_errors": {}}
