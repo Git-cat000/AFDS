@@ -166,16 +166,20 @@ test("restores a portable film with audio and captions and displays live operati
     fullPage: true,
   });
   await page.setViewportSize({ width: 390, height: 844 });
+  const restoreButton = page.getByRole("button", { name: "恢复为新项目" });
+  await restoreButton.scrollIntoViewIfNeeded();
+  await expect(restoreButton).toBeInViewport();
+  await expect(page.getByText(/不恢复连接密钥、旧任务/)).toBeInViewport();
   await page.screenshot({
     path: "../data/phase7-restore-mobile.png",
     fullPage: true,
   });
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.getByRole("button", { name: "恢复为新项目" }).click();
+  await restoreButton.click();
   await expect(
     page.getByRole("heading", { name: "恢复工程副本" }),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "下载 MP4" })).toBeVisible();
+  await page.setViewportSize({ width: 1440, height: 1000 });
   const projects = await (await page.request.get("/api/v1/projects")).json();
   const restored = projects.find(
     (project: { title: string }) => project.title === restoredTitle,

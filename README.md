@@ -112,11 +112,11 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Playwright 会启动隔离测试 API、真实 Worker 和前端，验证创建项目、批准分镜、编辑第三镜头、生成素材、音频导入与字幕、渲染下载、审片证据、工程包导出及刷新恢复。基础截图保存至 `data/studio-desktop.png` 和 `data/studio-mobile.png`；Phase 6 截图为 `data/phase6-{continuity-desktop,timeline-desktop,timeline-mobile,review-desktop}.png`。
+Playwright 会启动隔离测试 API、真实 Worker 和前端，验证创建项目、批准分镜、编辑第三镜头、生成素材、音频导入与字幕、渲染下载、审片证据、工程包导出与恢复、运行概览及刷新恢复。基础截图保存至 `data/studio-desktop.png` 和 `data/studio-mobile.png`；Phase 6 截图为 `data/phase6-{continuity-desktop,timeline-desktop,timeline-mobile,review-desktop}.png`，Phase 7 截图为 `data/phase7-{restore,operations}-{desktop,mobile}.png`。
 
 测试覆盖旧项目迁移、密钥保护、四类 HTTP 协议、任务恢复、防重复提交、媒体文件和浏览器设置流程。模型协议测试使用本机 HTTP 服务，真实服务的模型权限、参数支持与计费需要用户配置后验证。
 
-v0.4 在 Windows 上完成 173 项后端测试、14 项前端测试和 4 项浏览器测试；3 项真实服务验收和 1 项需要 Windows 符号链接权限的测试明确跳过。Ruff、格式检查、ESLint、TypeScript/Vite 构建和启动预检通过。音画样片为 20 秒、480 帧，工程包经原生 OTIO 解析及素材哈希验证。
+v0.5 在 Windows 上完成 203 项后端测试、17 项前端测试和 5 项浏览器测试；3 项真实服务验收和 1 项需要 Windows 符号链接权限的测试明确跳过。Ruff、格式检查、ESLint、TypeScript/Vite 构建和启动预检通过。恢复验收从独立数据库与素材目录读取工程包并重新成片；浏览器恢复样片为 H.264 320×180、24 fps、48 帧/2 秒及 AAC 48 kHz 立体声，工程包经原生 OTIO 解析及素材哈希验证。
 
 ## 配置模型服务
 

@@ -344,3 +344,79 @@ def test_cancelled_publication_can_retry_on_same_worker(source_backup, destinati
     worker.queue.retry(job["project_id"], job["id"])
     worker.run_once()
     assert job_state(database, job)["state"] == "completed"
+
+
+@pytest.mark.parametrize("comment_size", [0, 65535])
+def test_zip64_directory_cannot_override_preallocation_bounds(
+    source_backup, destination, monkeypatch, comment_size
+):
+    import app.restore_service as restore
+
+    _, _, archive = source_backup
+    client, database = destination
+    offset = archive.rfind(b"PK\x05\x06")
+    end = bytearray(archive[offset:])
+    _, _, _, _, _, length, directory, _ = struct.unpack("<4s4H2LH", end)
+    struct.pack_into("<H", end, 20, comment_size)
+    zip64 = struct.pack(
+        "<4sQ2H2L4Q", b"PK\x06\x06", 44, 45, 45, 0, 0, 10005, 10005, length, directory
+    ) + struct.pack("<4sLQL", b"PK\x06\x07", 0, offset, 1)
+    content = archive[:offset] + zip64 + end + b"x" * comment_size
+
+    def must_not_parse(*args, **kwargs):
+        raise AssertionError("ZIP64 overrode the prechecked directory bounds")
+
+    monkeypatch.setattr(restore, "ZipFile", must_not_parse)
+    job = upload(client, content).json()
+    Worker(database).run_once()
+    assert job_state(database, job)["error"]["code"] == "RESTORE_INVALID_ARCHIVE"
+
+
+@pytest.mark.parametrize("track_id", ["v1", "video", "audio"])
+def test_restore_remaps_schema_references_without_rewriting_text(
+    source_backup, destination, track_id
+):
+    from app.project_engine import validate
+    from app.restore_service import RestoreService
+
+    _, apr, _ = source_backup
+    _, database = destination
+    apr["timeline"]["tracks"][0]["id"] = track_id
+    apr["brief"] = track_id
+    apr["style_bible"] = {"id": track_id, "nested": {"asset_id": track_id}}
+    apr["scenes"][0]["description"] = track_id
+    apr["shots"][0]["action"] = track_id
+    apr["characters"][0]["name"] = track_id
+    apr["locations"][0]["spatial_notes"] = track_id
+    apr["timeline"]["captions"][0]["text"] = track_id
+    apr["timeline"]["markers"][0]["label"] = track_id
+    character = apr["characters"][0]
+    character["reference_asset_ids"] = [apr["assets"][0]["id"]]
+    apr["world_states"][0].update(
+        shot_id=apr["shots"][0]["id"],
+        characters=[{"character_id": character["id"], "costume": track_id}],
+        props=[{"name": track_id, "holder_character_id": character["id"]}],
+        environment={"id": track_id},
+    )
+    apr = validate(apr)
+    restored, mapping = RestoreService(database).remap(
+        apr, {"project_id": new_id(), "title": "Copy", "base_revision": 1}, new_id()
+    )
+    assert restored["brief"] == track_id
+    assert restored["style_bible"] == apr["style_bible"]
+    assert restored["scenes"][0]["description"] == track_id
+    assert restored["shots"][0]["action"] == track_id
+    assert restored["characters"][0]["name"] == track_id
+    assert restored["locations"][0]["spatial_notes"] == track_id
+    assert restored["timeline"]["captions"][0]["text"] == track_id
+    assert restored["timeline"]["markers"][0]["label"] == track_id
+    assert restored["timeline"]["tracks"][0]["type"] == "video"
+    assert restored["timeline"]["tracks"][0]["id"] == mapping[track_id]
+    state = restored["world_states"][0]
+    assert state["shot_id"] == restored["shots"][0]["id"]
+    assert state["characters"][0]["character_id"] == restored["characters"][0]["id"]
+    assert state["props"][0]["holder_character_id"] == restored["characters"][0]["id"]
+    assert state["characters"][0]["costume"] == state["props"][0]["name"] == track_id
+    assert state["environment"] == {"id": track_id}
+    assert restored["characters"][0]["reference_asset_ids"] == [mapping[apr["assets"][0]["id"]]]
+    validate(restored)

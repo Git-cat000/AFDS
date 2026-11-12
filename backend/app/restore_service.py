@@ -58,11 +58,16 @@ def inspect_directory(path):
     # Current exports are <2GB/<10005members, so global ZIP64/spanned EOCDs are unnecessary.
     size = path.stat().st_size
     with path.open("rb") as handle:
-        handle.seek(max(0, size - 65557))
-        tail = handle.read(65557)
+        # Include the preceding 20-byte locator even with a maximum-length ZIP comment.
+        handle.seek(max(0, size - 65577))
+        tail = handle.read(65577)
     position = tail.rfind(b"PK\x05\x06")
     if position < 0 or len(tail) - position < 22:
         raise invalid("ZIP directory is missing")
+    if position >= 20 and tail[position - 20 : position - 16] == b"PK\x06\x07":
+        # ZipFile otherwise replaces the checked legacy bounds with ZIP64 values.
+        # Per-member ZIP64 headers from our exporter remain supported.
+        raise invalid("Global ZIP64 directories are unsupported")
     _, disk, start, on_disk, count, length, offset, comment = struct.unpack_from(
         "<4s4H2LH", tail, position
     )
@@ -344,17 +349,53 @@ class RestoreService:
         mapping = {key: new_id() for key in ids}
         mapping[apr["project_id"]] = request["project_id"]
 
-        def replace(value):
-            if isinstance(value, dict):
-                return {
-                    k: copy.deepcopy(v) if k == "provenance" else replace(v)
-                    for k, v in value.items()
-                }
-            if isinstance(value, list):
-                return [replace(v) for v in value]
-            return mapping.get(value, value) if isinstance(value, str) else value
+        def fields(item, single=(), many=()):
+            for key in single:
+                if item.get(key) is not None:
+                    item[key] = mapping[item[key]]
+            for key in many:
+                item[key] = [mapping[value] for value in item.get(key, [])]
 
-        result = replace(apr)
+        # Only schema-defined identities/references are rewritten. Track IDs are
+        # ordinary strings and can also occur in prose, enums or arbitrary metadata.
+        result = copy.deepcopy(apr)
+        fields(result, ("project_id", "render_asset_id"))
+        for item in result["scenes"]:
+            fields(item, ("id", "location_id"), ("shot_ids",))
+        for item in result["shots"]:
+            fields(
+                item,
+                (
+                    "id",
+                    "scene_id",
+                    "input_state_ref",
+                    "output_state_ref",
+                    "active_asset_version_id",
+                ),
+                ("character_ids",),
+            )
+        for collection in ("characters", "locations"):
+            for item in result[collection]:
+                fields(item, ("id",), ("reference_asset_ids",))
+        for item in result["world_states"]:
+            fields(item, ("id", "scene_id", "shot_id"))
+            for character in item["characters"]:
+                fields(character, ("character_id",))
+            for prop in item["props"]:
+                fields(prop, ("holder_character_id",))
+        for item in result["continuity_links"]:
+            fields(item, ("id", "source_shot_id", "target_shot_id"))
+        for item in result["assets"]:
+            fields(item, ("id",))
+        for item in result["asset_versions"]:
+            fields(item, ("id", "shot_id", "asset_id", "poster_asset_id"))
+        for track in result["timeline"]["tracks"]:
+            fields(track, ("id",))
+            for item in track["items"]:
+                fields(item, ("shot_id",) if track["type"] == "video" else ("asset_id",))
+        for collection in ("captions", "markers"):
+            for item in result["timeline"][collection]:
+                fields(item, ("id",))
         result.update(title=request["title"], revision=request["base_revision"] + 1, status="draft")
         result["budget"] = {
             "budget_limit": 0,
