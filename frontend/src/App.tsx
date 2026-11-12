@@ -50,6 +50,15 @@ import type {
   ModelSettings,
 } from "./types";
 
+const activeJobStates = new Set([
+  "queued",
+  "claimed",
+  "running",
+  "verifying",
+  "retry_wait",
+  "cancel_requested",
+]);
+
 function Status({ state }: { state: string }) {
   return (
     <span className={`status status-${state}`}>
@@ -105,17 +114,23 @@ export function App() {
     queryKey: ["projects"],
     queryFn: () => api<Project[]>("/projects"),
   });
-  const project = useQuery({
-    queryKey: ["project", projectId],
-    enabled: !!projectId,
-    queryFn: () => api<Project>(`/projects/${projectId}/apr`),
-    refetchInterval: 1500,
-  });
   const jobs = useQuery({
     queryKey: ["jobs", projectId],
     enabled: !!projectId,
     queryFn: () => api<Job[]>(`/projects/${projectId}/jobs`),
-    refetchInterval: 1000,
+    refetchInterval: (query) =>
+      tab === "jobs" ||
+      query.state.data?.some((job) => activeJobStates.has(job.state))
+        ? 1000
+        : 5000,
+  });
+  const activeJobs =
+    jobs.data?.filter((job) => activeJobStates.has(job.state)) || [];
+  const project = useQuery({
+    queryKey: ["project", projectId],
+    enabled: !!projectId,
+    queryFn: () => api<Project>(`/projects/${projectId}/apr`),
+    refetchInterval: activeJobs.length ? 1500 : 5000,
   });
   const plans = useQuery({
     queryKey: ["plans", projectId],
@@ -138,7 +153,7 @@ export function App() {
     llmProvider.startsWith("openai-") || videoProvider.startsWith("openai-");
   const history = useQuery({
     queryKey: ["history", projectId, project.data?.revision],
-    enabled: !!projectId,
+    enabled: !!projectId && historyOpen,
     queryFn: () => api<Revision[]>(`/projects/${projectId}/revisions`),
   });
   const apr = project.data;
@@ -147,12 +162,6 @@ export function App() {
       (p) => p.state === "proposed" && (!p.type || p.type === "storyboard"),
     )
     .at(-1);
-  const activeJobs =
-    jobs.data?.filter((j) =>
-      ["queued", "claimed", "running", "verifying", "retry_wait"].includes(
-        j.state,
-      ),
-    ) || [];
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -176,6 +185,7 @@ export function App() {
     setProject(id);
     setError("");
     setEditing(null);
+    setHistoryOpen(false);
     setTab("storyboard");
     setRemoteConsent(false);
   }
@@ -214,6 +224,20 @@ export function App() {
         shot_ids: ids,
       }),
     );
+  }
+
+  function queueSnapshot(route: "exports" | "render", format?: "zip" | "otio") {
+    if (!apr) return;
+    const id = apr.project_id;
+    void run(async () => {
+      const current = await api<Project>(`/projects/${id}/apr`);
+      queryClient.setQueryData(["project", id], current);
+      await api(`/projects/${id}/${route}`, {
+        base_revision: current.revision,
+        format,
+      });
+      if (useStudio.getState().projectId === id) setTab("jobs");
+    });
   }
 
   const visibleError =
@@ -299,7 +323,7 @@ export function App() {
         </button>
         <div className="rail-bottom">
           <span className="online-dot" />
-          本地工作区<small>v0.5 · FILM STUDIO</small>
+          本地工作区<small>v0.5.1 · FILM STUDIO</small>
         </div>
       </aside>
       <main className="workspace">
@@ -443,42 +467,20 @@ export function App() {
                 <button onClick={() => setHistoryOpen(true)}>版本记录</button>
                 <button
                   disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      await api(`/projects/${projectId}/exports`, {
-                        base_revision: apr.revision,
-                        format: "zip",
-                      });
-                      setTab("jobs");
-                    })
-                  }
+                  onClick={() => queueSnapshot("exports", "zip")}
                 >
                   导出工程包
                 </button>
                 <button
                   disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      await api(`/projects/${projectId}/exports`, {
-                        base_revision: apr.revision,
-                        format: "otio",
-                      });
-                      setTab("jobs");
-                    })
-                  }
+                  onClick={() => queueSnapshot("exports", "otio")}
                 >
                   导出 OTIO
                 </button>
                 <button
                   className="primary"
                   disabled={busy || !apr.shots.length || activeJobs.length > 0}
-                  onClick={() =>
-                    void run(() =>
-                      api(`/projects/${projectId}/render`, {
-                        base_revision: apr.revision,
-                      }),
-                    )
-                  }
+                  onClick={() => queueSnapshot("render")}
                 >
                   <Play size={15} />
                   渲染成片
@@ -1119,6 +1121,8 @@ export function App() {
       )}
       {historyOpen && apr && (
         <Modal title="项目版本记录" close={() => setHistoryOpen(false)}>
+          {history.isPending && <p className="muted">正在读取版本记录…</p>}
+          {history.error && <p role="alert">{history.error.message}</p>}
           {history.data?.map((r) => (
             <div className="history-row" key={r.revision}>
               <strong>r{r.revision}</strong>

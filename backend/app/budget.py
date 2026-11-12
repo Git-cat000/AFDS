@@ -49,25 +49,55 @@ class BudgetService:
             ).mappings()
         ]
 
-    def summary(self, connection, apr):
+    def summary(self, connection, apr, *, include_entries=True):
         policy = apr["budget"]
-        entries = self.entries(connection, apr["project_id"])
-        if any(e["payload"]["currency"] != policy.get("currency", "USD") for e in entries):
-            raise DomainError(
-                "BUDGET_CURRENCY_LOCKED", "Ledger currency must match project currency", 409
+        entries = self.entries(connection, apr["project_id"]) if include_entries else None
+        if entries is None:
+            payload = db.cost_entries.c.payload
+            rows = connection.execute(
+                select(
+                    payload["currency"].as_string(),
+                    payload["actual_micros"].as_integer(),
+                    payload["estimate_micros"].as_integer(),
+                    payload["state"].as_string(),
+                ).where(db.cost_entries.c.project_id == str(apr["project_id"]))
             )
-        spent = sum(e["payload"].get("actual_micros", 0) or 0 for e in entries)
-        reserved = sum(
-            (e["payload"].get("estimate_micros") or 0)
-            for e in entries
-            if e["payload"]["state"] in {"reserved", "pending"}
-        )
-        unknown = sum(
-            e["payload"]["state"] in {"reserved", "pending"}
-            and e["payload"].get("estimate_micros") is None
-            for e in entries
-        )
+        else:
+            rows = (
+                (
+                    entry["payload"]["currency"],
+                    entry["payload"].get("actual_micros"),
+                    entry["payload"].get("estimate_micros"),
+                    entry["payload"]["state"],
+                )
+                for entry in entries
+            )
+        # Stream projected values. Python integers retain exact micro-units even
+        # when a long-lived ledger exceeds SQLite SUM's signed 64-bit range.
+        spent = reserved = unknown = 0
+        for currency, actual, estimate, state in rows:
+            if currency != policy.get("currency", "USD"):
+                raise DomainError(
+                    "BUDGET_CURRENCY_LOCKED", "Ledger currency must match project currency", 409
+                )
+            spent += actual or 0
+            if state in {"reserved", "pending"}:
+                reserved += estimate or 0
+                unknown += estimate is None
         limit = micros(policy.get("budget_limit", 0))
+        result = {
+            "budget_limit": money(limit),
+            "currency": policy.get("currency", "USD"),
+            "allow_unknown_cost": policy.get("allow_unknown_cost", True),
+            "allow_remote": policy.get("allow_remote", True),
+            "spent": money(spent),
+            "reserved": money(reserved),
+            "unknown_count": unknown,
+            "over_budget": spent + reserved > limit,
+            "revision": apr["revision"],
+        }
+        if not include_entries:
+            return result
         public_entries = []
         for entry in entries:
             item = entry["payload"]
@@ -86,18 +116,8 @@ class BudgetService:
                     else None,
                 }
             )
-        return {
-            "budget_limit": money(limit),
-            "currency": policy.get("currency", "USD"),
-            "allow_unknown_cost": policy.get("allow_unknown_cost", True),
-            "allow_remote": policy.get("allow_remote", True),
-            "spent": money(spent),
-            "reserved": money(reserved),
-            "unknown_count": unknown,
-            "over_budget": spent + reserved > limit,
-            "entries": public_entries,
-            "revision": apr["revision"],
-        }
+        result["entries"] = public_entries
+        return result
 
     def public(self, project_id):
         with self.database.engine.connect() as connection:
@@ -132,7 +152,7 @@ class BudgetService:
         self.enforce(apr, config)
         estimate = config.get("request_cost")
         currency = config.get("cost_currency", "USD")
-        state = self.summary(connection, apr)
+        state = self.summary(connection, apr, include_entries=False)
         if currency != state["currency"]:
             raise DomainError(
                 "BUDGET_CURRENCY_MISMATCH", "Provider estimate currency differs from project", 409

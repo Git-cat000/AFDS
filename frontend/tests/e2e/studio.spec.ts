@@ -4,7 +4,11 @@ test("creates a film, edits a shot, generates footage and downloads the render",
   page,
 }) => {
   const errors: string[] = [];
+  let revisionRequests = 0;
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("request", (request) => {
+    if (request.url().endsWith("/revisions")) revisionRequests++;
+  });
   await page.goto("/");
   await page.getByLabel("项目名称").fill(`雨夜告别 ${Date.now()}`);
   await page.getByLabel("创作简述").fill("在雨夜的车站，一位旅人向旧日告别。");
@@ -33,6 +37,14 @@ test("creates a film, edits a shot, generates footage and downloads the render",
   await page.getByRole("link", { name: "下载 MP4" }).click();
   const download = await downloadEvent;
   expect(await download.failure()).toBeNull();
+  expect(revisionRequests).toBe(0);
+  await page.getByRole("button", { name: "版本记录", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "项目版本记录" }),
+  ).toBeVisible();
+  await expect(page.locator(".history-row").first()).toBeVisible();
+  expect(revisionRequests).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "关闭", exact: true }).click();
   await page.reload();
   await expect(page.getByRole("link", { name: "下载 MP4" })).toBeVisible();
   await page.screenshot({ path: "../data/studio-desktop.png", fullPage: true });

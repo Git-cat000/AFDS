@@ -105,7 +105,7 @@ class ProjectEngine:
         apr = validate(apr)
         from app.budget import BudgetService
 
-        finance = BudgetService(self.database).summary(connection, apr)
+        finance = BudgetService(self.database).summary(connection, apr, include_entries=False)
         apr["budget"].update(spent=finance["spent"], reserved=finance["reserved"])
         return apr
 
@@ -126,7 +126,7 @@ class ProjectEngine:
         apr = validate(apr)
         from app.budget import BudgetService
 
-        finance = BudgetService(self.database).summary(connection, apr)
+        finance = BudgetService(self.database).summary(connection, apr, include_entries=False)
         apr["budget"].update(spent=finance["spent"], reserved=finance["reserved"])
         pid = apr["project_id"]
         payload = {

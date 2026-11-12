@@ -12,7 +12,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app import db
 from app.budget import BudgetService
-from app.project_engine import ProjectEngine
+from app.errors import DomainError
+from app.schemas import BudgetPolicy
 
 WORKER_STALE_SECONDS = 15
 JOB_LIMIT = 50
@@ -49,7 +50,6 @@ def native_otio_available():
 class OperationsService:
     def __init__(self, database):
         self.database = database
-        self.engine = ProjectEngine(database)
 
     def status(self):
         now = time.time()
@@ -65,15 +65,18 @@ class OperationsService:
                 version = connection.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar_one()
-                seen = list(
-                    connection.execute(select(db.worker_heartbeats.c.last_seen_at)).scalars()
-                )
-                live = [t for t in seen if now - WORKER_STALE_SECONDS <= t <= now + 1]
+                last_seen = db.worker_heartbeats.c.last_seen_at
+                online_count, latest = connection.execute(
+                    select(
+                        func.count().filter(last_seen.between(now - WORKER_STALE_SECONDS, now + 1)),
+                        func.max(last_seen),
+                    )
+                ).one()
                 database = {"status": "available", "schema_version": version}
                 worker.update(
-                    status="online" if live else "offline",
-                    online_count=len(live),
-                    last_seen_age_seconds=max(0, now - max(seen)) if seen else None,
+                    status="online" if online_count else "offline",
+                    online_count=online_count,
+                    last_seen_age_seconds=max(0, now - latest) if latest is not None else None,
                 )
         except SQLAlchemyError:
             pass
@@ -109,7 +112,21 @@ class OperationsService:
 
     def project(self, project_id):
         with self.database.engine.connect() as connection:
-            apr = self.engine.load(connection, project_id)
+            header = (
+                connection.execute(
+                    select(
+                        db.projects.c.id.label("project_id"),
+                        db.projects.c.revision,
+                        db.projects.c.payload["budget"].label("budget"),
+                    ).where(db.projects.c.id == str(project_id), db.projects.c.archived.is_(False))
+                )
+                .mappings()
+                .first()
+            )
+            if header is None:
+                raise DomainError("NOT_FOUND", "Project not found", 404)
+            apr = dict(header)
+            apr["budget"] = BudgetPolicy.model_validate(apr["budget"] or {}).model_dump(mode="json")
             counts = dict(
                 connection.execute(
                     select(db.jobs.c.state, func.count())
@@ -147,13 +164,29 @@ class OperationsService:
                 and math.isfinite(row["elapsed_ms"])
                 and row["elapsed_ms"] >= 0
             )
-            stored = connection.execute(
-                select(db.assets.c.path, db.assets.c.payload).where(
-                    db.assets.c.project_id == str(project_id)
+            asset_count = connection.execute(
+                select(func.count())
+                .select_from(db.assets)
+                .where(db.assets.c.project_id == str(project_id))
+            ).scalar_one()
+            files = (
+                select(
+                    db.assets.c.path,
+                    func.max(db.assets.c.payload["size_bytes"].as_integer()).label("size_bytes"),
                 )
-            ).all()
-            unique = {path: asset["size_bytes"] for path, asset in stored}
-            budget = BudgetService(self.database).summary(connection, apr)
+                .where(db.assets.c.project_id == str(project_id))
+                .group_by(db.assets.c.path)
+                .subquery()
+            )
+            unique_files, media_bytes = connection.execute(
+                select(func.count(), func.coalesce(func.sum(files.c.size_bytes), 0)).select_from(
+                    files
+                )
+            ).one()
+            budget = BudgetService(self.database).summary(connection, apr, include_entries=False)
+            graph = self.graph(
+                connection, project_id, recent[:JOB_LIMIT], sum(counts.values()) > JOB_LIMIT
+            )
         total = sum(counts.values())
         return {
             "project_id": str(project_id),
@@ -180,15 +213,15 @@ class OperationsService:
                 "sample_limit": 200,
             },
             "media": {
-                "asset_count": len(stored),
-                "unique_files": len(unique),
-                "bytes": sum(unique.values()),
+                "asset_count": asset_count,
+                "unique_files": unique_files,
+                "bytes": media_bytes,
             },
-            "budget": {k: v for k, v in budget.items() if k != "entries"},
-            "graph": self.graph(recent[:JOB_LIMIT], apr, total > JOB_LIMIT),
+            "budget": budget,
+            "graph": graph,
         }
 
-    def graph(self, rows, apr, truncated):
+    def graph(self, connection, project_id, rows, truncated):
         jobs = {row["id"] for row in rows}
         producers = {aid: row["id"] for row in rows for aid in row["outputs"] or []}
         nodes = []
@@ -208,7 +241,6 @@ class OperationsService:
                 }
             )
         edges, media = set(), set()
-        assets = {a["id"]: a for a in apr["assets"]}
         for row in rows:
             for dependency in row["dependencies"] or []:
                 if dependency in jobs and dependency != row["id"]:
@@ -236,11 +268,23 @@ class OperationsService:
                             {
                                 "id": f"asset:{aid}",
                                 "type": "asset",
-                                "label": "existing_media" if aid in assets else "unavailable_media",
-                                "media_type": assets.get(aid, {}).get("media_type", "unknown"),
+                                "label": "unavailable_media",
+                                "media_type": "unknown",
                             }
                         )
                     edges.add((f"asset:{aid}", row["id"], "media"))
+        if media:
+            known_media = dict(
+                connection.execute(
+                    select(db.assets.c.id, db.assets.c.payload["media_type"].as_string()).where(
+                        db.assets.c.project_id == str(project_id), db.assets.c.id.in_(media)
+                    )
+                ).all()
+            )
+            for node in nodes:
+                if node["type"] == "asset" and node["id"][6:] in known_media:
+                    node["label"] = "existing_media"
+                    node["media_type"] = known_media[node["id"][6:]]
         if len(edges) > EDGE_LIMIT:
             truncated = True
         return {
