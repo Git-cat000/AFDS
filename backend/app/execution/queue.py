@@ -244,6 +244,7 @@ class Queue:
             "import_image",
             "review_shot",
             "restore_project",
+            "cleanup_storage",
         }:
             return
         if job["operation"] == "export_project":

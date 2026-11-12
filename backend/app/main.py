@@ -98,6 +98,9 @@ def create_app(settings: Settings | None = None):
     from app.feedback_api import router as feedback_router
 
     application.include_router(feedback_router, prefix="/api/v1")
+    from app.maintenance_api import router as maintenance_router
+
+    application.include_router(maintenance_router, prefix="/api/v1")
     from app.api import router
 
     application.include_router(router, prefix="/api/v1")

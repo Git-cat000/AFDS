@@ -8,7 +8,7 @@ from app.errors import DomainError
 from app.execution.queue import Queue, public_job
 from app.image_service import MAX_IMAGE_BYTES
 from app.project_engine import ProjectEngine
-from app.storage import contained
+from app.storage import contained, ensure_space
 
 router = APIRouter(prefix="/projects/{project_id}/images")
 
@@ -32,6 +32,7 @@ async def import_image(
     except ValueError as error:
         raise DomainError("INVALID_UPLOAD", "Invalid content length", 422) from error
     database = request.app.state.database
+    ensure_space(database.settings.data_dir, int(declared or 0))
     engine = ProjectEngine(database)
     with database.engine.connect() as connection:
         engine.check_revision(engine.load(connection, project_id), base_revision)

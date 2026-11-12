@@ -22,6 +22,11 @@ def contained(root, relative):
     return path
 
 
+def ensure_space(root, required_bytes):
+    if required_bytes > 0 and shutil.disk_usage(root).free < required_bytes:
+        raise DomainError("STORAGE_FULL", "Insufficient free space for this upload", 507)
+
+
 def asset_path(database, project_id, asset_id):
     with database.engine.connect() as connection:
         row = connection.execute(

@@ -11,7 +11,7 @@ from app.errors import DomainError
 from app.execution.queue import Queue, public_job, serialize
 from app.project_engine import ProjectEngine
 from app.schemas import APR, ProjectCreate
-from app.storage import contained
+from app.storage import contained, ensure_space
 
 router = APIRouter()
 RESTORE_NAMESPACE = UUID("8317baad-705f-49f4-aa96-cdb9a4a0c243")
@@ -35,6 +35,7 @@ async def restore_project(
     if declared < 0 or declared > limit:
         raise DomainError("UPLOAD_TOO_LARGE", "Project archive upload limit is 2 GB", 413)
     database = request.app.state.database
+    ensure_space(database.settings.data_dir, declared)
     pid = str(uuid5(RESTORE_NAMESPACE, str(request_id)))
     relative = f"uploads/{pid}/{uuid4()}.zip"
     destination = contained(database.settings.data_dir, relative)

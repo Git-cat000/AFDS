@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query, Request
 
 from app.audio_pipeline import MAX_UPLOAD_BYTES
 from app.errors import DomainError
-from app.storage import contained
+from app.storage import contained, ensure_space
 from app.timeline_service import AnchorRequest, CompositionUpdate, TimelineService
 
 router = APIRouter(prefix="/projects/{project_id}/timeline")
@@ -48,6 +48,7 @@ async def import_audio(
         if size <= 0 or size > MAX_UPLOAD_BYTES:
             raise DomainError("UPLOAD_TOO_LARGE", "Audio upload limit is 32 MB", 413)
     database = request.app.state.database
+    ensure_space(database.settings.data_dir, int(declared or 0))
     service = TimelineService(database)
     with database.engine.connect() as connection:
         apr = service.engine.load(connection, project_id)

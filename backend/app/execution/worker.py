@@ -1,5 +1,6 @@
 import argparse
 import copy
+import errno
 import logging
 import time
 from pathlib import Path
@@ -58,7 +59,11 @@ class Worker:
             def checkpoint():
                 return self.queue.heartbeat(job["id"], self.owner)
 
-            if job["operation"] in {"plan_storyboard", "plan_semantic"}:
+            if job["operation"] == "cleanup_storage":
+                from app.maintenance_service import MaintenanceService
+
+                result = MaintenanceService(self.database).execute(job, self.owner, checkpoint)
+            elif job["operation"] in {"plan_storyboard", "plan_semantic"}:
                 from app.planning_service import PlanningService
                 from app.remote_media import remote_lease
 
@@ -127,7 +132,11 @@ class Worker:
                     )
                     result["video"] = mixed
             elapsed_ms = int((time.monotonic() - started) * 1000)
-            if job["operation"] in {"plan_storyboard", "plan_semantic"}:
+            if job["operation"] == "cleanup_storage":
+                from app.maintenance_service import MaintenanceService
+
+                MaintenanceService(self.database).publish(job, self.owner, result, elapsed_ms)
+            elif job["operation"] in {"plan_storyboard", "plan_semantic"}:
                 from app.planning_service import PlanningService
 
                 PlanningService(self.database).publish(job, self.owner, result, elapsed_ms)
@@ -163,11 +172,11 @@ class Worker:
             self.queue.fail(
                 job, self.owner, "MEDIA_DEPENDENCY_MISSING", "Check FFmpeg and input media"
             )
-        except OSError:
+        except OSError as error:
             self.queue.fail(
                 job,
                 self.owner,
-                "STORAGE_ERROR",
+                "STORAGE_FULL" if error.errno == errno.ENOSPC else "STORAGE_ERROR",
                 "Cannot write media. Check disk space and permissions",
             )
         except Exception:

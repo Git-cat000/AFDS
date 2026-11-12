@@ -1,5 +1,6 @@
 """Bounded local image ingestion and canonical reference-image preparation."""
 
+import errno
 import json
 from pathlib import Path
 from uuid import UUID
@@ -27,6 +28,8 @@ def canonical_image(source, output):
             image.convert("RGB").save(output, "PNG")
             return {"width": image.width, "height": image.height, "codec": "png"}
     except (ValueError, OSError, UnidentifiedImageError, Image.DecompressionBombError) as error:
+        if isinstance(error, OSError) and error.errno == errno.ENOSPC:
+            raise
         raise DomainError(
             "IMAGE_INVALID", "Use a single PNG, JPEG or WebP image up to 16 million pixels", 422
         ) from error
