@@ -1,6 +1,120 @@
 .creation-workspace {
   min-width: 0;
 }
+.workbench-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 18px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #19191c;
+}
+.workbench-tools button {
+  font-size: 12px;
+  border-color: transparent;
+  background: transparent;
+}
+.workbench-tools button[aria-pressed="true"] {
+  background: #373144;
+  color: #e3dcff;
+}
+.creation-columns.with-tool {
+  grid-template-columns: minmax(320px, 1fr) minmax(380px, 600px);
+}
+.workbench-dock {
+  min-width: 0;
+  max-height: 82vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  scrollbar-width: thin;
+}
+.dock-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #242428;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.dock-header small {
+  display: block;
+  margin-top: 5px;
+}
+.dock-header button {
+  font-size: 11px;
+}
+.workbench-dock .page {
+  padding: 20px 16px;
+}
+.workbench-dock .director.panel {
+  border: 0;
+  margin: 0;
+}
+.workbench-dock .continuity-panel {
+  padding: 18px;
+}
+.workbench-dock .continuity-columns {
+  grid-template-columns: 1fr;
+}
+.workbench-dock .asset-grid {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+.workbench-dock .job-row {
+  flex-wrap: wrap;
+}
+.workbench-dock pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.reference-assignment > img {
+  display: block;
+  max-width: 100%;
+  max-height: 240px;
+  margin-bottom: 18px;
+  border-radius: 8px;
+}
+.reference-assignment label {
+  display: block;
+  margin: 15px 0;
+}
+.reference-assignment button {
+  margin: 8px 8px 0 0;
+}
+.workbench-dock .asset-card .button-row {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+.shot-handoffs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+@media (max-width: 1100px) {
+  .creation-columns.with-tool {
+    grid-template-columns: 1fr;
+  }
+  .workbench-dock {
+    max-height: none;
+  }
+}
+@media (max-width: 600px) {
+  .workbench-tools {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .workbench-tools button {
+    flex-shrink: 0;
+  }
+}
 .studio-heading {
   padding: 22px 24px;
 }

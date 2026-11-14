@@ -14,6 +14,52 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
+
+it("keeps an unavailable requested shot unselected instead of reviewing another shot", () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    async () => new Response("[]"),
+  );
+  const project = {
+    project_id: "p1",
+    revision: 4,
+    shots: [
+      {
+        id: "ready",
+        title: "Ready",
+        order: 0,
+        active_asset_version_id: "v1",
+        status: "ready",
+      },
+      {
+        id: "pending",
+        title: "Pending",
+        order: 1,
+        active_asset_version_id: null,
+        status: "draft",
+      },
+    ],
+  } as unknown as Project;
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ReviewPanel
+        project={project}
+        initialShotId="pending"
+        busy={false}
+        run={async (action) => {
+          await action();
+        }}
+      />
+    </QueryClientProvider>,
+  );
+  expect(
+    (screen.getByRole("checkbox", { name: "1 · Ready" }) as HTMLInputElement)
+      .checked,
+  ).toBe(false);
+  expect(
+    (screen.getByRole("button", { name: "提交审片" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+});
 it("keeps vision review disabled without opt-in and submits an offline evidence review", async () => {
   const fetcher = vi
     .spyOn(globalThis, "fetch")

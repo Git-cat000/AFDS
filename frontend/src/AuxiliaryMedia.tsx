@@ -9,12 +9,16 @@ export function AuxiliaryMedia({
   run,
   busy,
   preview,
+  onUseImage,
+  onUseAudio,
 }: {
   project: Project;
   settings?: ModelSettings;
   run: (action: () => Promise<unknown>) => Promise<void>;
   busy: boolean;
   preview: (id: string) => void;
+  onUseImage?: (id: string) => void;
+  onUseAudio?: (id: string) => void;
 }) {
   const [kind, setKind] = useState<"image" | "speech">("image");
   const [prompt, setPrompt] = useState("");
@@ -90,20 +94,37 @@ export function AuxiliaryMedia({
       </div>
       <div className="asset-grid">
         {assets.map((asset) => (
-          <article className="panel asset-card" key={asset.id}>
+          <article
+            className="panel asset-card"
+            key={asset.id}
+            data-asset-id={asset.id}
+          >
             {asset.media_type === "image" ? (
               <img
                 src={mediaUrl(project.project_id, asset.id)}
-                alt="生成的参考图像"
+                alt={asset.provenance.name || "参考图像"}
               />
             ) : (
               <div className="audio-art">
                 <AudioLines size={40} />
               </div>
             )}
-            <h3>{asset.media_type === "image" ? "参考图像" : "生成旁白"}</h3>
+            <h3>
+              {asset.provenance.name ||
+                (asset.media_type === "image" ? "参考图像" : "语音素材")}
+            </h3>
             <small>{asset.provenance.provider_id}</small>
             <div className="button-row">
+              {asset.media_type === "image" && onUseImage && (
+                <button disabled={busy} onClick={() => onUseImage(asset.id)}>
+                  用作当前镜头参考图
+                </button>
+              )}
+              {asset.media_type === "audio" && onUseAudio && (
+                <button disabled={busy} onClick={() => onUseAudio(asset.id)}>
+                  在时间轴中使用
+                </button>
+              )}
               <button onClick={() => preview(asset.id)}>
                 {asset.media_type === "image" ? (
                   <Image size={14} />
@@ -125,7 +146,7 @@ export function AuxiliaryMedia({
         ))}
       </div>
       <p className="muted">
-        生成的旁白可播放和下载。时间轴音频混合将在后续版本加入。
+        图像可关联到镜头，音频可在时间轴中安排播放位置与混音。
       </p>
     </section>
   );

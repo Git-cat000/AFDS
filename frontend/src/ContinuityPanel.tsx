@@ -103,16 +103,18 @@ export function ContinuityPanel({
   project,
   run,
   busy,
+  initialShotId,
 }: {
   project: Project;
   run: (action: () => Promise<unknown>) => Promise<void>;
   busy: boolean;
+  initialShotId?: string;
 }) {
   const [entityType, setEntityType] = useState<"character" | "location">(
     "character",
   );
   const [entityId, setEntityId] = useState("");
-  const [shotId, setShotId] = useState("");
+  const [shotId, setShotId] = useState(initialShotId || "");
   const [stateId, setStateId] = useState("");
   const [linkId, setLinkId] = useState("");
   const [manualPlan, setPlan] = useState<Plan | null>(null);

@@ -77,10 +77,14 @@ export function TimelineEditor({
   project,
   run,
   busy,
+  initialAudioAssetId,
+  initialShotId,
 }: {
   project: EditorProject;
   run: (action: () => Promise<unknown>) => Promise<void>;
   busy: boolean;
+  initialAudioAssetId?: string;
+  initialShotId?: string;
 }) {
   const timeline = project.timeline as Composition;
   const audioTracks = timeline.tracks.filter(
@@ -88,6 +92,8 @@ export function TimelineEditor({
   );
   const videoItems =
     timeline.tracks[0]?.type === "video" ? timeline.tracks[0].items : [];
+  const initialFrame =
+    videoItems.find((item) => item.shot_id === initialShotId)?.start_frame || 0;
   const captions = timeline.captions || [];
   const markers = timeline.markers || [];
   const totalFrames = videoItems.reduce(
@@ -103,18 +109,18 @@ export function TimelineEditor({
   const [file, setFile] = useState<File | null>(null);
   const [rights, setRights] = useState(false);
   const [trackId, setTrackId] = useState("");
-  const [assetId, setAssetId] = useState("");
-  const [audioStart, setAudioStart] = useState(0);
+  const [assetId, setAssetId] = useState(initialAudioAssetId || "");
+  const [audioStart, setAudioStart] = useState(initialFrame);
   const [sourceStart, setSourceStart] = useState(0);
   const [audioDuration, setAudioDuration] = useState(24);
   const [gain, setGain] = useState(0);
   const [editingAudio, setEditingAudio] = useState<number | null>(null);
   const [captionId, setCaptionId] = useState<string | null>(null);
   const [captionText, setCaptionText] = useState("");
-  const [captionStart, setCaptionStart] = useState(0);
+  const [captionStart, setCaptionStart] = useState(initialFrame);
   const [captionDuration, setCaptionDuration] = useState(24);
   const [markerLabel, setMarkerLabel] = useState("");
-  const [markerFrame, setMarkerFrame] = useState(0);
+  const [markerFrame, setMarkerFrame] = useState(initialFrame);
   const [markerKind, setMarkerKind] = useState<Marker["kind"]>("beat");
   const [bpm, setBpm] = useState("");
   const [boundaries, setBoundaries] = useState<string[]>([]);

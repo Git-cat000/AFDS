@@ -32,17 +32,25 @@ export function ReviewPanel({
   settings,
   run,
   busy,
+  initialShotId,
 }: {
   project: Project;
   settings?: ModelSettings;
   run: (action: () => Promise<unknown>) => Promise<void>;
   busy: boolean;
+  initialShotId?: string;
 }) {
   const available = project.shots.filter(
     (s) => s.active_asset_version_id && s.status !== "archived",
   );
   const [selected, setSelected] = useState<string[]>(
-    available.length ? [available[0].id] : [],
+    initialShotId
+      ? available.some((shot) => shot.id === initialShotId)
+        ? [initialShotId]
+        : []
+      : available.length
+        ? [available[0].id]
+        : [],
   );
   const [mode, setMode] = useState<"deterministic" | "vision">("deterministic");
   const [consent, setConsent] = useState(false);
@@ -68,6 +76,12 @@ export function ReviewPanel({
         </div>
       </div>
       <section className="panel review-controls">
+        {initialShotId &&
+          !available.some((shot) => shot.id === initialShotId) && (
+            <p className="protocol-note">
+              当前镜头尚无已选素材，可返回画布生成，或手动选择其它镜头审片。
+            </p>
+          )}
         <label>
           审片方式
           <select

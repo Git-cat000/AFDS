@@ -21,13 +21,6 @@ import {
 } from "lucide-react";
 import { api, ApiError, mediaUrl } from "./api";
 import { framesToTime, statusLabel } from "./format";
-function Status({ state }: { state: string }) {
-  return (
-    <span className={`status status-${state}`}>
-      {statusLabel[state] || state}
-    </span>
-  );
-}
 import { useStudio } from "./store";
 import { ProviderSettings } from "./ProviderSettings";
 import { AuxiliaryMedia } from "./AuxiliaryMedia";
@@ -39,7 +32,9 @@ import {
   type JobPage,
 } from "./history";
 import { CreationWorkspace } from "./CreationWorkspace";
+import { WorkbenchDock, WorkbenchToolbar } from "./WorkbenchToolbar";
 import { ImageUpload } from "./ImageUpload";
+import { ReferenceAssignment } from "./ReferenceAssignment";
 import { ContinuityPanel } from "./ContinuityPanel";
 import { ReviewPanel } from "./ReviewPanel";
 import { TimelineEditor } from "./TimelineEditor";
@@ -55,6 +50,14 @@ import type {
   Shot,
   ModelSettings,
 } from "./types";
+
+function Status({ state }: { state: string }) {
+  return (
+    <span className={`status status-${state}`}>
+      {statusLabel[state] || state}
+    </span>
+  );
+}
 
 function Modal({
   title,
@@ -91,7 +94,16 @@ export function App() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState("storyboard");
+  const [selectedShotId, setSelectedShotId] = useState("");
+  const [storyboardDrafts, setStoryboardDrafts] = useState<
+    Record<string, Shot[]>
+  >({});
   const [editing, setEditing] = useState<Shot | null>(null);
+  const [referenceAssignment, setReferenceAssignment] = useState<{
+    assetId: string;
+    shotId: string;
+  } | null>(null);
+  const [timelineAudioId, setTimelineAudioId] = useState("");
   const [previewAsset, setPreviewAsset] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -139,6 +151,12 @@ export function App() {
   const usesRemote =
     llmProvider.startsWith("openai-") || videoProvider.startsWith("openai-");
   const apr = project.data;
+  const selectedShot =
+    apr?.shots.find(
+      (shot) => shot.id === selectedShotId && shot.status !== "archived",
+    ) || apr?.shots.find((shot) => shot.status !== "archived");
+  const activeTool =
+    tab === "storyboard" && !apr?.shots.length ? "script" : tab;
   const plan = plans.data
     ?.filter(
       (p) => p.state === "proposed" && (!p.type || p.type === "storyboard"),
@@ -169,6 +187,10 @@ export function App() {
     setEditing(null);
     setHistoryOpen(false);
     setTab("storyboard");
+    setSelectedShotId("");
+    setStoryboardDrafts({});
+    setReferenceAssignment(null);
+    setTimelineAudioId("");
     setRemoteConsent(false);
   }
 
@@ -208,6 +230,14 @@ export function App() {
         shot_ids: ids,
       }),
     );
+  }
+
+  function showCandidates() {
+    setTab("storyboard");
+    if (window.innerWidth <= 1100)
+      document
+        .querySelector(".studio-layout")
+        ?.scrollIntoView?.({ block: "start" });
   }
 
   async function refreshProject(id: string) {
@@ -253,7 +283,7 @@ export function App() {
         {projectId && (
           <>
             <button
-              className={`nav ${tab === "storyboard" ? "active" : ""}`}
+              className={`nav ${["storyboard", "script"].includes(tab) ? "active" : ""}`}
               onClick={() => setTab("storyboard")}
             >
               <Film size={18} />
@@ -312,7 +342,7 @@ export function App() {
         </button>
         <div className="rail-bottom">
           <span className="online-dot" />
-          本地工作区<small>v0.6.0 · FILM STUDIO</small>
+          本地工作区<small>v0.6.1 · FILM STUDIO</small>
         </div>
       </aside>
       <main className="workspace">
@@ -471,7 +501,7 @@ export function App() {
                 </button>
               </div>
             </section>
-            {tab === "storyboard" && (
+            {["storyboard", "script"].includes(tab) && (
               <section className="studio-models">
                 <label>
                   导演 LLM
@@ -556,195 +586,239 @@ export function App() {
                 )}
               </section>
             )}
-            {tab === "storyboard" && (
-              <div className="studio-layout">
-                <details className="director panel" open={!apr.shots.length}>
-                  <summary>剧本与导演助手</summary>
-                  <header>
-                    <div className="director-icon">
-                      <Clapperboard size={18} />
-                    </div>
-                    <div>
-                      <h2>导演助手</h2>
-                      <small>
-                        {llmProvider === "mock-director"
-                          ? "Mock Director · 离线"
-                          : `外部 LLM · ${modelSettings.data?.providers.find((p) => p.kind === "llm")?.model || ""}`}
-                      </small>
-                    </div>
-                  </header>
+            <section className="studio-layout">
+              <WorkbenchToolbar activeTool={activeTool} select={setTab} />
+              <CreationWorkspace
+                key={apr.project_id}
+                project={apr}
+                busy={busy}
+                run={run}
+                edit={setEditing}
+                generate={generate}
+                selectedShotId={selectedShot?.id}
+                onSelectShot={setSelectedShotId}
+                openTool={setTab}
+                canGenerate={
+                  !(videoProvider.startsWith("openai-") && !remoteConsent)
+                }
+                dock={
+                  activeTool !== "storyboard" ? (
+                    <WorkbenchDock
+                      activeTool={activeTool}
+                      shotTitle={selectedShot?.title}
+                      close={showCandidates}
+                    >
+                      {activeTool === "script" && (
+                        <details className="director panel" open>
+                          <summary>剧本与导演助手</summary>
+                          <header>
+                            <div className="director-icon">
+                              <Clapperboard size={18} />
+                            </div>
+                            <div>
+                              <h2>导演助手</h2>
+                              <small>
+                                {llmProvider === "mock-director"
+                                  ? "Mock Director · 离线"
+                                  : `外部 LLM · ${modelSettings.data?.providers.find((p) => p.kind === "llm")?.model || ""}`}
+                              </small>
+                            </div>
+                          </header>
 
-                  <div className="brief-card">
-                    <span>创作简述</span>
-                    <p>{apr.brief || "尚未填写。可以在项目设定中补充。"}</p>
-                  </div>
-                  <label className="director-input">
-                    导演指令
-                    <textarea
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                      rows={3}
-                      maxLength={5000}
-                    />
-                  </label>
-                  <button
-                    className="primary"
-                    disabled={
-                      busy ||
-                      planningCount > 0 ||
-                      !message.trim() ||
-                      (llmProvider === "openai-llm" && !remoteConsent)
-                    }
-                    onClick={() =>
-                      void run(() =>
-                        queuePlanning(projectId!, "storyboard", {
-                          base_revision: apr.revision,
-                          message,
-                          provider_id: llmProvider,
-                          allow_remote: remoteConsent,
-                        }),
-                      )
-                    }
-                  >
-                    <Send size={15} />
-                    生成分镜建议
-                  </button>
-                  {planningCount > 0 && (
-                    <p role="status">
-                      正在生成分镜建议，可在任务队列查看进度或取消，刷新后可继续查看。
-                    </p>
-                  )}
-                  {plan && (
-                    <PlanProposal
-                      key={plan.id}
-                      plan={plan}
-                      disabled={busy}
-                      approve={(edited) =>
-                        void run(async () => {
-                          await api(
-                            `/projects/${projectId}/plans/${plan.id}`,
-                            { base_revision: apr.revision, shots: edited },
-                            "PATCH",
-                          );
-                          await api(
-                            `/projects/${projectId}/plans/${plan.id}/execute`,
-                            { base_revision: apr.revision, approved: true },
-                          );
-                        })
-                      }
-                    />
-                  )}
-                </details>
-                <CreationWorkspace
-                  key={apr.project_id}
-                  project={apr}
-                  busy={busy}
-                  run={run}
-                  edit={setEditing}
-                  generate={generate}
-                  canGenerate={
-                    !(videoProvider.startsWith("openai-") && !remoteConsent)
-                  }
-                />
-              </div>
-            )}
-            {tab === "continuity" && (
-              <ContinuityPanel
-                key={apr.project_id}
-                project={apr}
-                run={run}
-                busy={busy}
-              />
-            )}
-            {tab === "timeline" && (
-              <TimelineEditor
-                key={`${apr.project_id}:${apr.revision}`}
-                project={apr}
-                run={run}
-                busy={busy}
-              />
-            )}
-            {tab === "review" && (
-              <ReviewPanel
-                key={apr.project_id}
-                project={apr}
-                settings={modelSettings.data}
-                run={run}
-                busy={busy}
-              />
-            )}
-            {tab === "jobs" && (
-              <JobList
-                key={apr.project_id}
-                project={apr}
-                run={run}
-                busy={busy}
-                events={activity.data?.items || []}
-              />
-            )}
-            {tab === "assets" && (
-              <section className="page compact">
-                <h2>素材与候选版本</h2>
-                <ImageUpload project={apr} run={run} busy={busy} />
-                <div className="reference-library">
-                  {apr.assets
-                    .filter((a) => a.media_type === "image")
-                    .map((asset) => (
-                      <a
-                        key={asset.id}
-                        href={mediaUrl(apr.project_id, asset.id)}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <img
-                          src={mediaUrl(apr.project_id, asset.id)}
-                          alt={asset.provenance.name || "参考图像"}
-                          loading="lazy"
+                          <div className="brief-card">
+                            <span>创作简述</span>
+                            <p>
+                              {apr.brief || "尚未填写。可以在项目设定中补充。"}
+                            </p>
+                          </div>
+                          <label className="director-input">
+                            导演指令
+                            <textarea
+                              value={message}
+                              onChange={(e) => setMessage(e.target.value)}
+                              rows={3}
+                              maxLength={5000}
+                            />
+                          </label>
+                          <button
+                            className="primary"
+                            disabled={
+                              busy ||
+                              planningCount > 0 ||
+                              !message.trim() ||
+                              (llmProvider === "openai-llm" && !remoteConsent)
+                            }
+                            onClick={() =>
+                              void run(() =>
+                                queuePlanning(projectId!, "storyboard", {
+                                  base_revision: apr.revision,
+                                  message,
+                                  provider_id: llmProvider,
+                                  allow_remote: remoteConsent,
+                                }),
+                              )
+                            }
+                          >
+                            <Send size={15} />
+                            生成分镜建议
+                          </button>
+                          {planningCount > 0 && (
+                            <p role="status">
+                              正在生成分镜建议，可在任务队列查看进度或取消，刷新后可继续查看。
+                            </p>
+                          )}
+                          {plan && (
+                            <PlanProposal
+                              key={plan.id}
+                              plan={plan}
+                              shots={storyboardDrafts[plan.id] || plan.shots}
+                              changeShots={(shots) =>
+                                setStoryboardDrafts((drafts) => ({
+                                  ...drafts,
+                                  [plan.id]: shots,
+                                }))
+                              }
+                              disabled={busy}
+                              approve={(edited) =>
+                                void run(async () => {
+                                  await api(
+                                    `/projects/${projectId}/plans/${plan.id}`,
+                                    {
+                                      base_revision: apr.revision,
+                                      shots: edited,
+                                    },
+                                    "PATCH",
+                                  );
+                                  await api(
+                                    `/projects/${projectId}/plans/${plan.id}/execute`,
+                                    {
+                                      base_revision: apr.revision,
+                                      approved: true,
+                                    },
+                                  );
+                                  if (
+                                    useStudio.getState().projectId ===
+                                    apr.project_id
+                                  )
+                                    setTab("storyboard");
+                                })
+                              }
+                            />
+                          )}
+                        </details>
+                      )}
+                      {activeTool === "continuity" && (
+                        <ContinuityPanel
+                          key={`${apr.project_id}:${selectedShot?.id || ""}`}
+                          project={apr}
+                          initialShotId={selectedShot?.id}
+                          run={run}
+                          busy={busy}
                         />
-                      </a>
-                    ))}
-                </div>
-                <div className="asset-grid">
-                  {apr.asset_versions.map((v, index) => (
-                    <article className="panel asset-card" key={v.id}>
-                      <img
-                        src={mediaUrl(apr.project_id, v.poster_asset_id)}
-                        alt="镜头素材预览"
-                      />
-                      <h3>
-                        镜头{" "}
-                        {(apr.shots.find((s) => s.id === v.shot_id)?.order ??
-                          0) + 1}{" "}
-                        · 候选 {index + 1}
-                      </h3>
-                      <Status state={v.status} />
-                      <button onClick={() => setPreviewAsset(v.asset_id)}>
-                        <Play size={15} />
-                        播放素材
-                      </button>
-                      <button
-                        disabled={busy || v.status === "stale"}
-                        onClick={() =>
-                          setEditing(apr.shots.find((s) => s.id === v.shot_id)!)
-                        }
-                      >
-                        选择版本
-                      </button>
-                    </article>
-                  ))}
-                </div>
-                {!apr.asset_versions.length && (
-                  <p className="muted">生成镜头后在这里查看全部素材版本。</p>
-                )}
-                <AuxiliaryMedia
-                  project={apr}
-                  settings={modelSettings.data}
-                  busy={busy}
-                  run={run}
-                  preview={setPreviewAsset}
-                />
-              </section>
-            )}
+                      )}
+                      {activeTool === "timeline" && (
+                        <TimelineEditor
+                          key={`${apr.project_id}:${apr.revision}:${timelineAudioId}:${selectedShot?.id || ""}`}
+                          initialAudioAssetId={timelineAudioId}
+                          initialShotId={selectedShot?.id}
+                          project={apr}
+                          run={run}
+                          busy={busy}
+                        />
+                      )}
+                      {activeTool === "review" && (
+                        <ReviewPanel
+                          key={`${apr.project_id}:${selectedShot?.id || ""}`}
+                          project={apr}
+                          initialShotId={selectedShot?.id}
+                          settings={modelSettings.data}
+                          run={run}
+                          busy={busy}
+                        />
+                      )}
+                      {activeTool === "jobs" && (
+                        <JobList
+                          key={apr.project_id}
+                          project={apr}
+                          run={run}
+                          busy={busy}
+                          events={activity.data?.items || []}
+                        />
+                      )}
+                      {activeTool === "assets" && (
+                        <section className="page compact">
+                          <h2>素材与候选版本</h2>
+                          <ImageUpload project={apr} run={run} busy={busy} />
+                          <div className="asset-grid">
+                            {apr.asset_versions.map((v, index) => (
+                              <article className="panel asset-card" key={v.id}>
+                                <img
+                                  src={mediaUrl(
+                                    apr.project_id,
+                                    v.poster_asset_id,
+                                  )}
+                                  alt="镜头素材预览"
+                                />
+                                <h3>
+                                  镜头{" "}
+                                  {(apr.shots.find((s) => s.id === v.shot_id)
+                                    ?.order ?? 0) + 1}{" "}
+                                  · 候选 {index + 1}
+                                </h3>
+                                <Status state={v.status} />
+                                <button
+                                  onClick={() => setPreviewAsset(v.asset_id)}
+                                >
+                                  <Play size={15} />
+                                  播放素材
+                                </button>
+                                <button
+                                  disabled={busy || v.status === "stale"}
+                                  onClick={() =>
+                                    setEditing(
+                                      apr.shots.find(
+                                        (s) => s.id === v.shot_id,
+                                      )!,
+                                    )
+                                  }
+                                >
+                                  选择版本
+                                </button>
+                              </article>
+                            ))}
+                          </div>
+                          {!apr.asset_versions.length && (
+                            <p className="muted">
+                              生成镜头后在这里查看全部素材版本。
+                            </p>
+                          )}
+                          <AuxiliaryMedia
+                            project={apr}
+                            settings={modelSettings.data}
+                            busy={busy}
+                            run={run}
+                            preview={setPreviewAsset}
+                            onUseImage={
+                              selectedShot
+                                ? (assetId) =>
+                                    setReferenceAssignment({
+                                      assetId,
+                                      shotId: selectedShot.id,
+                                    })
+                                : undefined
+                            }
+                            onUseAudio={(assetId) => {
+                              setTimelineAudioId(assetId);
+                              setTab("timeline");
+                            }}
+                          />
+                        </section>
+                      )}
+                    </WorkbenchDock>
+                  ) : undefined
+                }
+              />
+            </section>
             <section className="timeline-panel">
               <header>
                 <div>
@@ -863,6 +937,27 @@ export function App() {
           generate={() => generate([editing.id])}
         />
       )}
+      {referenceAssignment && apr && (
+        <Modal
+          title="将图像用于镜头"
+          close={() => setReferenceAssignment(null)}
+        >
+          <ReferenceAssignment
+            key={`${apr.project_id}:${referenceAssignment.shotId}:${referenceAssignment.assetId}`}
+            project={apr}
+            assetId={referenceAssignment.assetId}
+            shotId={referenceAssignment.shotId}
+            busy={busy}
+            run={run}
+            complete={() => {
+              if (useStudio.getState().projectId !== apr.project_id) return;
+              setSelectedShotId(referenceAssignment.shotId);
+              setReferenceAssignment(null);
+              showCandidates();
+            }}
+          />
+        </Modal>
+      )}
       {previewAsset && apr && (
         <Modal
           title={
@@ -934,12 +1029,15 @@ function PlanProposal({
   plan,
   disabled,
   approve,
+  shots,
+  changeShots,
 }: {
   plan: Plan;
   disabled: boolean;
   approve: (shots: Shot[]) => void;
+  shots: Shot[];
+  changeShots: (shots: Shot[]) => void;
 }) {
-  const [shots, setShots] = useState(plan.shots);
   return (
     <div className="proposal">
       <h3>分镜建议</h3>
@@ -955,7 +1053,7 @@ function PlanProposal({
             rows={3}
             value={shot.action}
             onChange={(e) =>
-              setShots(
+              changeShots(
                 shots.map((s, i) =>
                   i === index ? { ...s, action: e.target.value } : s,
                 ),

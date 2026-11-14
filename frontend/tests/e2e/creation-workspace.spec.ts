@@ -175,14 +175,28 @@ test("arranges a canvas, compares candidates and records source-bound feedback a
   expect(approvedShot.ok()).toBeTruthy();
   await page.getByRole("button", { name: "刷新项目" }).click();
   await expect(page.getByTestId("shot-card")).toContainText("已批准");
+  await page.getByRole("button", { name: "打开参考素材", exact: true }).click();
+  await expect(page.getByLabel("镜头创作画布")).toBeVisible();
   await page
-    .getByLabel("reference_image", { exact: true })
-    .selectOption(image.id);
-  await page.getByRole("button", { name: "预览参考图修改" }).click();
-  await expect(page.getByLabel("创作修改预览")).toBeVisible();
-  await page.getByRole("button", { name: "批准创作修改" }).click();
+    .locator(`.asset-card[data-asset-id="${image.id}"]`)
+    .getByRole("button", { name: "用作当前镜头参考图" })
+    .click();
+  const assignment = page.getByRole("dialog", { name: "将图像用于镜头" });
+  await assignment.getByRole("button", { name: "预览图像关联" }).click();
+  await assignment.getByRole("button", { name: "批准关联到镜头" }).click();
   await expect(page.locator(".node-references img")).toHaveCount(1);
   await expect(page.locator(".feedback-record")).toContainText("历史候选评价");
+  await page.getByRole("button", { name: "审看所选镜头" }).click();
+  await expect(
+    page.getByRole("checkbox", { name: "1 · DEMO canvas shot" }),
+  ).toBeChecked();
+  await expect(page.getByText("90%", { exact: true })).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: "../data/workbench-flow-desktop.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "回到镜头候选" }).click();
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: "../data/creation-canvas-desktop.png",
@@ -202,6 +216,12 @@ test("arranges a canvas, compares candidates and records source-bound feedback a
   await page.getByRole("button", { name: "关闭", exact: true }).click();
   await page.screenshot({
     path: "../data/creation-canvas-mobile.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "编辑镜头音画" }).click();
+  await expect(page.getByLabel("创作工具面板")).toBeInViewport();
+  await page.screenshot({
+    path: "../data/workbench-flow-mobile.png",
     fullPage: true,
   });
   expect(

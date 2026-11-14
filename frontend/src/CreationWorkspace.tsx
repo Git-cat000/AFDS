@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent } from "react";
+import { useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Film, GripHorizontal, Maximize2, Minus, Plus } from "lucide-react";
 import { api, mediaUrl } from "./api";
@@ -21,6 +21,10 @@ type Props = {
   edit: (shot: Shot) => void;
   generate: (ids: string[]) => void;
   canGenerate: boolean;
+  dock?: ReactNode;
+  selectedShotId?: string;
+  onSelectShot?: (id: string) => void;
+  openTool?: (tool: "assets" | "review" | "timeline") => void;
 };
 const initial: Layout = { positions: {}, x: 36, y: 42, zoom: 1 };
 function loadLayout(projectId: string): Layout {
@@ -55,7 +59,12 @@ export function CreationWorkspace(props: Props) {
   const { project, busy, generate, canGenerate } = props;
   const shots = project.shots.filter((shot) => shot.status !== "archived");
   const [selected, setSelected] = useState(shots[0]?.id || "");
-  const shot = shots.find((s) => s.id === selected) || shots[0];
+  const shot =
+    shots.find((s) => s.id === (props.selectedShotId || selected)) || shots[0];
+  function selectShot(id: string) {
+    setSelected(id);
+    props.onSelectShot?.(id);
+  }
   const [mode, setMode] = useState<"canvas" | "grid">("canvas");
   const [layout, setLayout] = useState(() => loadLayout(project.project_id));
   const canvas = useRef<HTMLDivElement>(null);
@@ -154,7 +163,9 @@ export function CreationWorkspace(props: Props) {
           </button>
         </div>
       </div>
-      <div className={`creation-columns ${mode}`}>
+      <div
+        className={`creation-columns ${mode} ${props.dock ? "with-tool" : ""}`}
+      >
         <div className="canvas-column">
           <div
             className={`shot-canvas ${mode}`}
@@ -233,7 +244,7 @@ export function CreationWorkspace(props: Props) {
                       className="node-select"
                       aria-label={`选择镜头 ${s.title}`}
                       aria-pressed={shot?.id === s.id}
-                      onClick={() => setSelected(s.id)}
+                      onClick={() => selectShot(s.id)}
                     >
                       <div className="node-poster">
                         {version ? (
@@ -334,7 +345,7 @@ export function CreationWorkspace(props: Props) {
             <select
               value={shot?.id || ""}
               onChange={(e) => {
-                setSelected(e.target.value);
+                selectShot(e.target.value);
                 const index = shots.findIndex((s) => s.id === e.target.value);
                 const point = position(shots[index], index);
                 save({
@@ -352,7 +363,8 @@ export function CreationWorkspace(props: Props) {
             </select>
           </label>
         </div>
-        {shot && <ShotInspector key={shot.id} {...props} shot={shot} />}
+        {props.dock ||
+          (shot && <ShotInspector key={shot.id} {...props} shot={shot} />)}
       </div>
     </section>
   );
@@ -366,6 +378,7 @@ function ShotInspector({
   edit,
   generate,
   canGenerate,
+  openTool,
 }: Props & { shot: Shot }) {
   const versions = project.asset_versions.filter((v) => v.shot_id === shot.id);
   const [first, setFirst] = useState(
@@ -511,6 +524,13 @@ function ShotInspector({
         <button onClick={() => edit(shot)}>编辑镜头详情</button>
       </header>
       <div className="inspector-actions">
+        {openTool && (
+          <div className="shot-handoffs">
+            <button onClick={() => openTool("assets")}>打开参考素材</button>
+            <button onClick={() => openTool("review")}>审看所选镜头</button>
+            <button onClick={() => openTool("timeline")}>编辑镜头音画</button>
+          </div>
+        )}
         <button
           className="primary"
           disabled={busy || shot.locked || !canGenerate}

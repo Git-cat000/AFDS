@@ -72,6 +72,13 @@ test("finishes a continuity-aware film with audio, captions, review evidence and
       .getByRole("combobox", { name: "音频素材", exact: true })
       .locator("option"),
   ).toHaveCount(2);
+  await page.getByRole("button", { name: "图像与声音", exact: true }).click();
+  await page
+    .getByRole("button", { name: "在时间轴中使用", exact: true })
+    .click();
+  await expect(
+    page.getByRole("combobox", { name: "音频素材", exact: true }),
+  ).not.toHaveValue("");
   await page.getByRole("button", { name: "新增音轨" }).click();
   await page.getByLabel("音频开始帧", { exact: true }).fill("24");
   await page.getByLabel("音频持续帧", { exact: true }).fill("48");

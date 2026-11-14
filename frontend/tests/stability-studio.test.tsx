@@ -17,19 +17,46 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function setup() {
+function setup(withShots = false) {
   const apr = {
     project_id: "demo",
     revision: 1,
     title: "DEMO paged studio",
     brief: "",
     format: { width: 320, height: 180, fps_num: 24, fps_den: 1 },
-    scenes: [],
-    shots: [],
+    scenes: [{ id: "scene", order: 0, title: "DEMO scene" }],
+    shots: withShots
+      ? [1, 2].map((n) => ({
+          id: `shot-${n}`,
+          scene_id: "scene",
+          order: n - 1,
+          title: `DEMO shot ${n}`,
+          action: "Walk",
+          emotion: "calm",
+          camera: { shot_size: "wide", movement: "static" },
+          duration_frames: 48,
+          locked: false,
+          status: "ready",
+          active_asset_version_id: `version-${n}`,
+        }))
+      : [],
     assets: [],
-    asset_versions: [],
+    asset_versions: withShots
+      ? [1, 2].map((n) => ({
+          id: `version-${n}`,
+          shot_id: `shot-${n}`,
+          asset_id: `video-${n}`,
+          poster_asset_id: `poster-${n}`,
+          status: "ready",
+          generated_by_job_id: "job",
+        }))
+      : [],
     style_bible: {},
-    timeline: { tracks: [{ id: "v1", type: "video", items: [] }] },
+    timeline: {
+      tracks: [{ id: "v1", type: "video", items: [] }],
+      captions: [],
+      markers: [],
+    },
   };
   const job = {
     id: "job-1",
@@ -67,7 +94,22 @@ function setup() {
         };
       if (url.endsWith("/jobs/job-1"))
         return { ...job, request: { prompt: "DEMO detailed input" } };
-      if (url.endsWith("/settings/models")) return { defaults: {} };
+      if (url.endsWith("/settings/models"))
+        return { defaults: {}, providers: [] };
+      if (url.includes("/feedback?"))
+        return { items: [], total: 0, next_cursor: null };
+      if (url.endsWith("/plans") && withShots)
+        return [
+          {
+            id: "story-plan",
+            state: "proposed",
+            type: "storyboard",
+            base_revision: 1,
+            shots: apr.shots,
+            provider_id: "mock-director",
+            estimated_cost: { status: "free", amount: 0 },
+          },
+        ];
       if (url.includes("/revisions/page?"))
         return {
           items: [
@@ -160,4 +202,53 @@ it("starts revision history at the first page after switching projects", async (
         url.includes("/demo-2/revisions/page?") && url.includes("cursor="),
     ),
   ).toBe(false);
+});
+
+it("keeps the canvas and selected shot while opening review and continuity tools", async () => {
+  setup(true);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "选择镜头 DEMO shot 2" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "缩小画布" }));
+  const canvas = screen.getByLabelText("镜头创作画布");
+  fireEvent.click(screen.getByRole("button", { name: "审看所选镜头" }));
+  await screen.findByRole("heading", { name: "审片与证据" });
+  expect(screen.getByLabelText("镜头创作画布")).toBe(canvas);
+  expect(screen.getByText("90%")).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("checkbox", {
+        name: "2 · DEMO shot 2",
+      }) as HTMLInputElement
+    ).checked,
+  ).toBe(true);
+  expect(
+    (
+      screen.getByRole("checkbox", {
+        name: "1 · DEMO shot 1",
+      }) as HTMLInputElement
+    ).checked,
+  ).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "角色与连续性" }));
+  expect(
+    ((await screen.findByLabelText("选择连续性镜头")) as HTMLSelectElement)
+      .value,
+  ).toBe("shot-2");
+  fireEvent.click(screen.getByRole("button", { name: "回到镜头候选" }));
+  expect(
+    screen.getByRole("complementary", { name: "镜头检查器" }).textContent,
+  ).toContain("DEMO shot 2");
+});
+
+it("keeps edited storyboard proposal text when using another workbench tool", async () => {
+  setup(true);
+  fireEvent.click(await screen.findByRole("button", { name: "剧本构思" }));
+  const draft = await screen.findByLabelText("建议镜头 1");
+  fireEvent.change(draft, { target: { value: "DEMO edited proposal" } });
+  fireEvent.click(screen.getByRole("button", { name: "图像与声音" }));
+  await screen.findByRole("heading", { name: "素材与候选版本" });
+  fireEvent.click(screen.getByRole("button", { name: "剧本构思" }));
+  expect(
+    ((await screen.findByLabelText("建议镜头 1")) as HTMLTextAreaElement).value,
+  ).toBe("DEMO edited proposal");
 });

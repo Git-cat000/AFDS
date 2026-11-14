@@ -65,6 +65,34 @@ const project = {
   },
 };
 
+it("selects the audio handed off by the media library when several assets exist", () => {
+  const value = {
+    ...project,
+    assets: [...project.assets, { ...project.assets[0], id: "audio2" }],
+  };
+  render(
+    <TimelineEditor
+      project={value}
+      initialAudioAssetId="audio2"
+      initialShotId="s2"
+      busy={false}
+      run={async (action) => {
+        await action();
+      }}
+    />,
+  );
+  expect(
+    (screen.getByRole("combobox", { name: "音频素材" }) as HTMLSelectElement)
+      .value,
+  ).toBe("audio2");
+  expect((screen.getByLabelText("音频开始帧") as HTMLInputElement).value).toBe(
+    "48",
+  );
+  expect((screen.getByLabelText("字幕开始帧") as HTMLInputElement).value).toBe(
+    "48",
+  );
+});
+
 function setup() {
   const calls: { url: string; body: unknown }[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
