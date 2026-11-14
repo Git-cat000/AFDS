@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
@@ -44,8 +45,16 @@ function setup() {
   const fetcher = vi.fn(async (url: string) => ({
     ok: true,
     json: async () => {
-      if (url.endsWith("/projects")) return [apr];
-      if (url.endsWith("/apr")) return structuredClone(apr);
+      if (url.endsWith("/projects"))
+        return [
+          apr,
+          { ...apr, project_id: "demo-2", title: "DEMO second project" },
+        ];
+      if (url.endsWith("/apr"))
+        return {
+          ...structuredClone(apr),
+          project_id: url.includes("/demo-2/") ? "demo-2" : "demo",
+        };
       if (url.includes("/jobs/page"))
         return {
           items: [{ ...job, id: url.includes("cursor=") ? "job-2" : "job-1" }],
@@ -59,6 +68,14 @@ function setup() {
       if (url.endsWith("/jobs/job-1"))
         return { ...job, request: { prompt: "DEMO detailed input" } };
       if (url.endsWith("/settings/models")) return { defaults: {} };
+      if (url.includes("/revisions/page?"))
+        return {
+          items: [
+            { revision: 1, reason: "DEMO", author: "user", created_at: 1 },
+          ],
+          total: 27,
+          next_cursor: url.includes("cursor=") ? null : "project-one-cursor",
+        };
       if (url.endsWith("/activity"))
         return { items: [], cursor: 0, has_more: false };
       if (url.endsWith("/budget/summary"))
@@ -119,4 +136,28 @@ it("loads the full request only when a user opens a job detail", async () => {
   expect(fetcher.mock.calls.some(([url]) => url.endsWith("/jobs/job-1"))).toBe(
     true,
   );
+});
+
+it("starts revision history at the first page after switching projects", async () => {
+  const fetcher = setup();
+  fireEvent.click(await screen.findByRole("button", { name: "版本记录" }));
+  const firstDialog = screen.getByRole("dialog", { name: "项目版本记录" });
+  await within(firstDialog).findByText("r1");
+  fireEvent.click(within(firstDialog).getByRole("button", { name: "下一页" }));
+  await within(firstDialog).findByText("第 2 页");
+  fireEvent.click(within(firstDialog).getByRole("button", { name: "关闭" }));
+  fireEvent.click(screen.getByRole("button", { name: "返回项目列表" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /DEMO second project/ }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "版本记录" }));
+  const secondDialog = screen.getByRole("dialog", { name: "项目版本记录" });
+  await within(secondDialog).findByText("r1");
+  expect(within(secondDialog).getByText("第 1 页")).toBeTruthy();
+  expect(
+    fetcher.mock.calls.some(
+      ([url]) =>
+        url.includes("/demo-2/revisions/page?") && url.includes("cursor="),
+    ),
+  ).toBe(false);
 });

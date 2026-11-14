@@ -70,6 +70,13 @@ test("arranges a canvas, compares candidates and records source-bound feedback a
           op: "set",
           entity_type: "shot",
           entity_id: apr.shots[0].id,
+          field: "status",
+          value: "approved",
+        },
+        {
+          op: "set",
+          entity_type: "shot",
+          entity_id: apr.shots[0].id,
           field: "action",
           value: "DEMO Walk towards the camera",
         },
@@ -99,9 +106,25 @@ test("arranges a canvas, compares candidates and records source-bound feedback a
   await expect(page.getByText("90%", { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText("90%", { exact: true })).toBeVisible();
+  const previousVersion = apr.shots[0].active_asset_version_id;
+  const replacement = apr.asset_versions.find(
+    (v: { id: string }) => v.id !== previousVersion,
+  );
+  await page.getByLabel("候选 B", { exact: true }).selectOption(replacement.id);
+  const beforePreview = (await latest()).revision;
+  await page.getByRole("button", { name: "预览选用候选 B" }).click();
+  await expect(
+    page.getByRole("button", { name: "批准创作修改" }),
+  ).toBeVisible();
+  expect((await latest()).revision).toBe(beforePreview);
+  await page.getByRole("button", { name: "批准创作修改" }).click();
+  await expect
+    .poll(async () => (await latest()).shots[0].active_asset_version_id)
+    .toBe(replacement.id);
+  await page.getByLabel("候选 A", { exact: true }).selectOption(replacement.id);
   await page
     .getByLabel("候选 B", { exact: true })
-    .selectOption(apr.asset_versions[0].id);
+    .selectOption(previousVersion);
   await expect(page.locator(".candidate video")).toHaveCount(2);
   await page.getByRole("button", { name: "从头同步播放" }).click();
   await page.getByRole("button", { name: "暂停比较" }).click();
@@ -120,13 +143,11 @@ test("arranges a canvas, compares candidates and records source-bound feedback a
   const poster = await page.request.get(
     `${root}/assets/${apr.asset_versions.at(-1).poster_asset_id}/file`,
   );
-  await importPanel
-    .getByLabel("参考图文件")
-    .setInputFiles({
-      name: "DEMO-reference.jpg",
-      mimeType: "image/jpeg",
-      buffer: await poster.body(),
-    });
+  await importPanel.getByLabel("参考图文件").setInputFiles({
+    name: "DEMO-reference.jpg",
+    mimeType: "image/jpeg",
+    buffer: await poster.body(),
+  });
   await importPanel.getByLabel("我有权使用并上传该图像").check();
   await importPanel.getByRole("button", { name: "上传并导入图像" }).click();
   await expect(importPanel).toContainText("参考图已加入素材库");
@@ -135,6 +156,25 @@ test("arranges a canvas, compares candidates and records source-bound feedback a
     (a: { provenance: { name?: string } }) =>
       a.provenance.name === "DEMO-reference.jpg",
   );
+  const approvedShot = await page.request.post(`${root}/changesets/commit`, {
+    data: {
+      base_revision: apr.revision,
+      approved: true,
+      reason: "DEMO protected references",
+      operations: [
+        {
+          op: "set",
+          entity_type: "shot",
+          entity_id: apr.shots[0].id,
+          field: "status",
+          value: "approved",
+        },
+      ],
+    },
+  });
+  expect(approvedShot.ok()).toBeTruthy();
+  await page.getByRole("button", { name: "刷新项目" }).click();
+  await expect(page.getByTestId("shot-card")).toContainText("已批准");
   await page
     .getByLabel("reference_image", { exact: true })
     .selectOption(image.id);
@@ -143,6 +183,7 @@ test("arranges a canvas, compares candidates and records source-bound feedback a
   await page.getByRole("button", { name: "批准创作修改" }).click();
   await expect(page.locator(".node-references img")).toHaveCount(1);
   await expect(page.locator(".feedback-record")).toContainText("历史候选评价");
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: "../data/creation-canvas-desktop.png",
     fullPage: true,

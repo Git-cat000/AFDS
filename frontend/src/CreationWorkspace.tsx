@@ -378,9 +378,13 @@ function ShotInspector({
   const right = versions.find((v) => v.id === second);
   const videos = useRef<(HTMLVideoElement | null)[]>([]);
   const [syncError, setSyncError] = useState("");
-  const [referenceImages, setReferenceImages] = useState(
-    shot.reference_images || {},
-  );
+  const [referenceDraft, setReferenceDraft] = useState<{
+    images: NonNullable<Shot["reference_images"]>;
+    revision: number;
+  } | null>(null);
+  const referenceImages = referenceDraft?.images || shot.reference_images || {};
+  const staleReferences =
+    referenceDraft !== null && referenceDraft.revision !== project.revision;
   const [body, setBody] = useState<ChangeSet>();
   const [preview, setPreview] = useState<Preview>();
   const [verdict, setVerdict] = useState("needs_work");
@@ -412,10 +416,16 @@ function ShotInspector({
     matches_current_selection: boolean;
     created_at: number;
   }>("feedback", project.project_id, `feedback?shot_id=${shot.id}`);
-  async function propose(field: string, value: unknown) {
+  async function propose(
+    field: string,
+    value: unknown,
+    baseRevision = project.revision,
+  ) {
     const changes: ChangeSet = {
-      base_revision: project.revision,
-      approved: false,
+      base_revision: baseRevision,
+      // The Engine validates protected edits during read-only preview too.
+      // Only the explicit approval button below sends the commit request.
+      approved: true,
       reason: "Creation workspace selection",
       operations: [
         { op: "set", entity_type: "shot", entity_id: shot.id, field, value },
@@ -563,7 +573,10 @@ function ShotInspector({
                   const value = { ...referenceImages };
                   if (e.target.value) value[role] = e.target.value;
                   else delete value[role];
-                  setReferenceImages(value);
+                  setReferenceDraft({
+                    images: value,
+                    revision: referenceDraft?.revision ?? project.revision,
+                  });
                   setPreview(undefined);
                 }}
               >
@@ -586,10 +599,29 @@ function ShotInspector({
             </label>
           ),
         )}
+        {staleReferences && (
+          <p role="alert">参考图草稿基于旧版本，请载入当前设置后重新编辑。</p>
+        )}
+        {referenceDraft && (
+          <button
+            onClick={() => {
+              setReferenceDraft(null);
+              setPreview(undefined);
+            }}
+          >
+            载入当前参考图设置
+          </button>
+        )}
         <button
-          disabled={busy}
+          disabled={busy || staleReferences}
           onClick={() =>
-            void run(() => propose("reference_images", referenceImages))
+            void run(() =>
+              propose(
+                "reference_images",
+                referenceImages,
+                referenceDraft?.revision ?? project.revision,
+              ),
+            )
           }
         >
           预览参考图修改
@@ -599,6 +631,15 @@ function ShotInspector({
       {preview && body && (
         <section className="change-preview" aria-label="创作修改预览">
           <h3>修改影响预览</h3>
+          {preview.changes.map((change, index) => (
+            <div className="diff" key={index}>
+              <strong>{change.field}</strong>
+              <pre>
+                {JSON.stringify(change.before, null, 2)} →{" "}
+                {JSON.stringify(change.after, null, 2)}
+              </pre>
+            </div>
+          ))}
           <p>
             受影响镜头 {preview.affected_shot_ids.length} 个 · 受保护镜头{" "}
             {preview.protected_shot_ids?.length || 0} 个
@@ -621,6 +662,7 @@ function ShotInspector({
                 });
                 setBody(undefined);
                 setPreview(undefined);
+                setReferenceDraft(null);
               })
             }
           >

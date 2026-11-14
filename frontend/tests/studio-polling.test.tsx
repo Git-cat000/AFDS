@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { App } from "../src/App";
 import { useStudio } from "../src/store";
+import type { Shot } from "../src/types";
 
 afterEach(() => {
   cleanup();
@@ -26,7 +27,7 @@ function studio(state = "completed") {
     brief: "",
     format: { width: 320, height: 180, fps_num: 24, fps_den: 1 },
     scenes: [],
-    shots: [],
+    shots: [] as Shot[],
     assets: [],
     asset_versions: [],
     characters: [],
@@ -58,6 +59,8 @@ function studio(state = "completed") {
       ok: true,
       json: async () => {
         if (path.endsWith("/apr")) return structuredClone(apr);
+        if (path.includes("/feedback?"))
+          return { items: [], total: 0, next_cursor: null };
         if (path.includes("/jobs/page?"))
           return {
             items: [{ ...job }],
@@ -215,3 +218,39 @@ it.each(["zip", "otio"])(
     );
   },
 );
+
+it("refreshes the source revision before generating footage after a recent edit", async () => {
+  const { apr, client, submissions } = studio();
+  await screen.findByRole("button", { name: "版本记录" });
+  apr.shots = [
+    {
+      id: "shot",
+      scene_id: "scene",
+      title: "DEMO recent edit",
+      action: "Walk",
+      emotion: "calm",
+      order: 0,
+      duration_frames: 48,
+      camera: { shot_size: "wide", movement: "static" },
+      locked: false,
+      status: "draft",
+      active_asset_version_id: null,
+    },
+  ];
+  apr.revision = 2;
+  await act(async () => {
+    client.setQueryData(["project", apr.project_id], { ...apr, revision: 1 });
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "生成全部镜头" }));
+  await waitFor(() =>
+    expect(submissions).toContainEqual({
+      path: `/api/v1/projects/${apr.project_id}/generate`,
+      body: {
+        base_revision: 2,
+        shot_ids: ["shot"],
+        provider_id: "mock-video-local",
+        allow_remote: false,
+      },
+    }),
+  );
+});

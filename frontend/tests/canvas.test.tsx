@@ -82,28 +82,33 @@ function setup() {
       ),
   );
   vi.stubGlobal("fetch", fetcher);
-  const renderView = () =>
-    render(
-      <QueryClientProvider
-        client={
-          new QueryClient({ defaultOptions: { queries: { retry: false } } })
-        }
-      >
-        <CreationWorkspace
-          project={project}
-          run={async (action) => {
-            await action();
-          }}
-          busy={false}
-          edit={vi.fn()}
-          generate={vi.fn()}
-          canGenerate
-        />
-      </QueryClientProvider>,
-    );
-  renderView();
-  return { fetcher, renderView };
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const tree = (value: Project) => (
+    <QueryClientProvider client={client}>
+      <CreationWorkspace
+        project={value}
+        run={async (action) => {
+          await action();
+        }}
+        busy={false}
+        edit={vi.fn()}
+        generate={vi.fn()}
+        canGenerate
+      />
+    </QueryClientProvider>
+  );
+  const renderView = () => render(tree(project));
+  const view = renderView();
+  return {
+    fetcher,
+    renderView,
+    project,
+    refresh: (value: Project) => view.rerender(tree(value)),
+  };
 }
+
 it("persists keyboard arrangement and zoom and restores the canvas after reopening", () => {
   const { renderView } = setup();
   fireEvent.keyDown(screen.getByRole("button", { name: "移动 DEMO shot" }), {
@@ -141,6 +146,13 @@ it("previews candidate selection and explicitly approves the captured revision",
   );
   expect(body.base_revision).toBe(4);
   expect(body.approved).toBe(true);
+  const preview = fetcher.mock.calls.find(([url]) =>
+    url.endsWith("/changesets/preview"),
+  )!;
+  expect(
+    JSON.parse(String((preview as unknown as [string, RequestInit])[1].body))
+      .approved,
+  ).toBe(true);
   expect(body.operations[0]).toMatchObject({
     field: "active_asset_version_id",
     value: "v2",
@@ -172,4 +184,50 @@ it("binds human feedback to candidate A and keeps reference updates previewed", 
     approved: true,
     note: "DEMO improve motion",
   });
+});
+
+it("updates untouched reference controls when the APR source changes", () => {
+  const { project, refresh } = setup();
+  fireEvent.click(screen.getByText("参考图与首尾帧"));
+  refresh({
+    ...project,
+    revision: 5,
+    shots: [
+      { ...project.shots[0], reference_images: { start_image: "image" } },
+    ],
+  });
+  expect(
+    (screen.getByLabelText("start_image") as HTMLSelectElement).value,
+  ).toBe("image");
+});
+it("keeps a dirty reference draft tied to its source revision until explicitly refreshed", () => {
+  const { project, refresh } = setup();
+  fireEvent.click(screen.getByText("参考图与首尾帧"));
+  fireEvent.change(screen.getByLabelText("end_image"), {
+    target: { value: "image" },
+  });
+  refresh({
+    ...project,
+    revision: 5,
+    shots: [
+      { ...project.shots[0], reference_images: { start_image: "image" } },
+    ],
+  });
+  expect(
+    screen.getByText("参考图草稿基于旧版本，请载入当前设置后重新编辑。"),
+  ).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "预览参考图修改",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "载入当前参考图设置" }));
+  expect(
+    (screen.getByLabelText("start_image") as HTMLSelectElement).value,
+  ).toBe("image");
+  expect((screen.getByLabelText("end_image") as HTMLSelectElement).value).toBe(
+    "",
+  );
 });

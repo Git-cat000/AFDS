@@ -138,12 +138,6 @@ export function App() {
     videoChoice || modelSettings.data?.defaults.video || "mock-video-local";
   const usesRemote =
     llmProvider.startsWith("openai-") || videoProvider.startsWith("openai-");
-  const history = useCursorPage<Revision>(
-    "history",
-    projectId || "",
-    "revisions/page",
-    !!projectId && historyOpen,
-  );
   const apr = project.data;
   const plan = plans.data
     ?.filter(
@@ -164,8 +158,8 @@ export function App() {
           : text,
       );
     } finally {
-      setBusy(false);
       await queryClient.invalidateQueries();
+      setBusy(false);
     }
   }
 
@@ -192,14 +186,16 @@ export function App() {
 
   function generate(ids: string[]) {
     if (!apr) return;
-    void run(() =>
-      api(`/projects/${projectId}/generate`, {
-        base_revision: apr.revision,
+    const id = apr.project_id;
+    void run(async () => {
+      const current = await refreshProject(id);
+      await api(`/projects/${id}/generate`, {
+        base_revision: current.revision,
         shot_ids: ids,
         provider_id: videoProvider,
         allow_remote: remoteConsent,
-      }),
-    );
+      });
+    });
   }
 
   function reorder(index: number, direction: number) {
@@ -214,12 +210,17 @@ export function App() {
     );
   }
 
+  async function refreshProject(id: string) {
+    const current = await api<Project>(`/projects/${id}/apr`);
+    queryClient.setQueryData(["project", id], current);
+    return current;
+  }
+
   function queueSnapshot(route: "exports" | "render", format?: "zip" | "otio") {
     if (!apr) return;
     const id = apr.project_id;
     void run(async () => {
-      const current = await api<Project>(`/projects/${id}/apr`);
-      queryClient.setQueryData(["project", id], current);
+      const current = await refreshProject(id);
       await api(`/projects/${id}/${route}`, {
         base_revision: current.revision,
         format,
@@ -917,38 +918,13 @@ export function App() {
         />
       )}
       {historyOpen && apr && (
-        <Modal title="项目版本记录" close={() => setHistoryOpen(false)}>
-          {history.pagination}
-          {history.isPending && <p className="muted">正在读取版本记录…</p>}
-          {history.error && <p role="alert">{history.error.message}</p>}
-          {history.data?.items.map((r) => (
-            <div className="history-row" key={r.revision}>
-              <strong>r{r.revision}</strong>
-              <div>
-                {r.reason}
-                <small>
-                  {r.author} · {new Date(r.created_at * 1000).toLocaleString()}
-                </small>
-              </div>
-              {r.revision === apr.revision && r.revision > 1 && (
-                <button
-                  disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      await api(
-                        `/projects/${projectId}/revisions/${r.revision}/revert`,
-                        { base_revision: apr.revision, approved: true },
-                      );
-                      setHistoryOpen(false);
-                    })
-                  }
-                >
-                  批准回滚此版本
-                </button>
-              )}
-            </div>
-          ))}
-        </Modal>
+        <RevisionHistory
+          key={apr.project_id}
+          project={apr}
+          busy={busy}
+          run={run}
+          close={() => setHistoryOpen(false)}
+        />
       )}
     </div>
   );
@@ -1324,6 +1300,58 @@ function ProjectSettings({
           </button>
         </>
       )}
+    </Modal>
+  );
+}
+
+function RevisionHistory({
+  project,
+  busy,
+  run,
+  close,
+}: {
+  project: Project;
+  busy: boolean;
+  run: Run;
+  close: () => void;
+}) {
+  const history = useCursorPage<Revision>(
+    "history",
+    project.project_id,
+    "revisions/page",
+  );
+  return (
+    <Modal title="项目版本记录" close={close}>
+      {history.pagination}
+      {history.isPending && <p className="muted">正在读取版本记录…</p>}
+      {history.error && <p role="alert">{history.error.message}</p>}
+      {history.data?.items.map((r) => (
+        <div className="history-row" key={r.revision}>
+          <strong>r{r.revision}</strong>
+          <div>
+            {r.reason}
+            <small>
+              {r.author} · {new Date(r.created_at * 1000).toLocaleString()}
+            </small>
+          </div>
+          {r.revision === project.revision && r.revision > 1 && (
+            <button
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  await api(
+                    `/projects/${project.project_id}/revisions/${r.revision}/revert`,
+                    { base_revision: project.revision, approved: true },
+                  );
+                  close();
+                })
+              }
+            >
+              批准回滚此版本
+            </button>
+          )}
+        </div>
+      ))}
     </Modal>
   );
 }

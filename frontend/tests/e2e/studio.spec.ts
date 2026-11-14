@@ -48,8 +48,12 @@ test("creates a film, edits a shot, generates footage and downloads the render",
   await page.getByRole("button", { name: "关闭", exact: true }).click();
   await page.reload();
   await expect(page.getByRole("link", { name: "下载 MP4" })).toBeVisible();
+  await page.getByRole("button", { name: "画布", exact: true }).click();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: "../data/studio-desktop.png", fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "网格", exact: true }).click();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: "../data/studio-mobile.png", fullPage: true });
   expect(errors).toEqual([]);
 });
