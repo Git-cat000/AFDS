@@ -13,26 +13,33 @@ import {
   Layers,
   Lock,
   Play,
-  Plus,
   RefreshCw,
   Send,
   Settings2,
   Unlock,
   X,
 } from "lucide-react";
-import {
-  api,
-  ApiError,
-  mediaUrl,
-  fetchEventHistory,
-  type ProjectEvent,
-} from "./api";
+import { api, ApiError, mediaUrl } from "./api";
 import { framesToTime, statusLabel } from "./format";
+function Status({ state }: { state: string }) {
+  return (
+    <span className={`status status-${state}`}>
+      {statusLabel[state] || state}
+    </span>
+  );
+}
 import { useStudio } from "./store";
 import { ProviderSettings } from "./ProviderSettings";
 import { AuxiliaryMedia } from "./AuxiliaryMedia";
-import { RemoteJobRecovery } from "./RemoteJobRecovery";
-import { ProjectBudget } from "./ProjectBudget";
+import { JobList } from "./JobList";
+import {
+  useCursorPage,
+  useProjectActivity,
+  queuePlanning,
+  type JobPage,
+} from "./history";
+import { CreationWorkspace } from "./CreationWorkspace";
+import { ImageUpload } from "./ImageUpload";
 import { ContinuityPanel } from "./ContinuityPanel";
 import { ReviewPanel } from "./ReviewPanel";
 import { TimelineEditor } from "./TimelineEditor";
@@ -40,7 +47,6 @@ import { BackupRestorePanel } from "./BackupRestorePanel";
 import { OperationsDashboard } from "./OperationsDashboard";
 import type {
   ChangeSet,
-  Job,
   Plan,
   Preview,
   Project,
@@ -49,23 +55,6 @@ import type {
   Shot,
   ModelSettings,
 } from "./types";
-
-const activeJobStates = new Set([
-  "queued",
-  "claimed",
-  "running",
-  "verifying",
-  "retry_wait",
-  "cancel_requested",
-]);
-
-function Status({ state }: { state: string }) {
-  return (
-    <span className={`status status-${state}`}>
-      {statusLabel[state] || state}
-    </span>
-  );
-}
 
 function Modal({
   title,
@@ -114,23 +103,21 @@ export function App() {
     queryKey: ["projects"],
     queryFn: () => api<Project[]>("/projects"),
   });
+  const activity = useProjectActivity(projectId);
   const jobs = useQuery({
-    queryKey: ["jobs", projectId],
+    queryKey: ["jobs", projectId, "summary"],
     enabled: !!projectId,
-    queryFn: () => api<Job[]>(`/projects/${projectId}/jobs`),
+    queryFn: () => api<JobPage>(`/projects/${projectId}/jobs/page?limit=25`),
     refetchInterval: (query) =>
-      tab === "jobs" ||
-      query.state.data?.some((job) => activeJobStates.has(job.state))
-        ? 1000
-        : 5000,
+      tab === "jobs" || query.state.data?.active_count ? 1000 : 5000,
   });
-  const activeJobs =
-    jobs.data?.filter((job) => activeJobStates.has(job.state)) || [];
+  const activeCount = jobs.data?.active_count || 0;
+  const planningCount = jobs.data?.active_operations.plan_storyboard || 0;
   const project = useQuery({
     queryKey: ["project", projectId],
     enabled: !!projectId,
     queryFn: () => api<Project>(`/projects/${projectId}/apr`),
-    refetchInterval: activeJobs.length ? 1500 : 5000,
+    refetchInterval: activeCount ? 1500 : 5000,
   });
   const plans = useQuery({
     queryKey: ["plans", projectId],
@@ -151,11 +138,12 @@ export function App() {
     videoChoice || modelSettings.data?.defaults.video || "mock-video-local";
   const usesRemote =
     llmProvider.startsWith("openai-") || videoProvider.startsWith("openai-");
-  const history = useQuery({
-    queryKey: ["history", projectId, project.data?.revision],
-    enabled: !!projectId && historyOpen,
-    queryFn: () => api<Revision[]>(`/projects/${projectId}/revisions`),
-  });
+  const history = useCursorPage<Revision>(
+    "history",
+    projectId || "",
+    "revisions/page",
+    !!projectId && historyOpen,
+  );
   const apr = project.data;
   const plan = plans.data
     ?.filter(
@@ -303,7 +291,7 @@ export function App() {
               onClick={() => setTab("jobs")}
             >
               <RefreshCw size={18} />
-              任务队列<span className="count">{activeJobs.length}</span>
+              任务队列<span className="count">{activeCount}</span>
             </button>
           </>
         )}
@@ -323,7 +311,7 @@ export function App() {
         </button>
         <div className="rail-bottom">
           <span className="online-dot" />
-          本地工作区<small>v0.5.1 · FILM STUDIO</small>
+          本地工作区<small>v0.6.0 · FILM STUDIO</small>
         </div>
       </aside>
       <main className="workspace">
@@ -364,12 +352,8 @@ export function App() {
           <OperationsDashboard projectId={projectId || undefined} />
         ) : !projectId ? (
           <section className="page dashboard">
-            <p className="eyebrow">YOUR NEXT FILM STARTS HERE</p>
-            <h1>
-              把一个念头，
-              <br />
-              <em>变成一组镜头。</em>
-            </h1>
+            <h1>创作工作区</h1>
+            <p className="muted">从故事、参考图到成片。</p>
             <div className="dashboard-grid">
               <div className="project-start">
                 <form className="panel create-project" onSubmit={create}>
@@ -454,7 +438,6 @@ export function App() {
           <>
             <section className="studio-heading">
               <div>
-                <p className="eyebrow">FILM PROJECT / MOCK PRODUCTION</p>
                 <h1>{apr.title}</h1>
                 <p className="muted">
                   {apr.format.width} × {apr.format.height} <span>·</span>{" "}
@@ -479,7 +462,7 @@ export function App() {
                 </button>
                 <button
                   className="primary"
-                  disabled={busy || !apr.shots.length || activeJobs.length > 0}
+                  disabled={busy || !apr.shots.length || activeCount > 0}
                   onClick={() => queueSnapshot("render")}
                 >
                   <Play size={15} />
@@ -574,7 +557,8 @@ export function App() {
             )}
             {tab === "storyboard" && (
               <div className="studio-layout">
-                <aside className="director panel">
+                <details className="director panel" open={!apr.shots.length}>
+                  <summary>剧本与导演助手</summary>
                   <header>
                     <div className="director-icon">
                       <Clapperboard size={18} />
@@ -588,12 +572,7 @@ export function App() {
                       </small>
                     </div>
                   </header>
-                  <div className="director-message">
-                    <p>先从故事出发。</p>
-                    <p>
-                      我会根据创作简述生成四个镜头的结构化建议。你可以审阅并修改，再开始制作。
-                    </p>
-                  </div>
+
                   <div className="brief-card">
                     <span>创作简述</span>
                     <p>{apr.brief || "尚未填写。可以在项目设定中补充。"}</p>
@@ -611,12 +590,13 @@ export function App() {
                     className="primary"
                     disabled={
                       busy ||
+                      planningCount > 0 ||
                       !message.trim() ||
                       (llmProvider === "openai-llm" && !remoteConsent)
                     }
                     onClick={() =>
                       void run(() =>
-                        api(`/projects/${projectId}/director`, {
+                        queuePlanning(projectId!, "storyboard", {
                           base_revision: apr.revision,
                           message,
                           provider_id: llmProvider,
@@ -628,6 +608,11 @@ export function App() {
                     <Send size={15} />
                     生成分镜建议
                   </button>
+                  {planningCount > 0 && (
+                    <p role="status">
+                      正在生成分镜建议，可在任务队列查看进度或取消，刷新后可继续查看。
+                    </p>
+                  )}
                   {plan && (
                     <PlanProposal
                       key={plan.id}
@@ -648,119 +633,18 @@ export function App() {
                       }
                     />
                   )}
-                </aside>
-                <section className="storyboard">
-                  <div className="section-heading">
-                    <div>
-                      <h2>
-                        故事分镜{" "}
-                        <span>
-                          {
-                            apr.shots.filter((s) => s.status !== "archived")
-                              .length
-                          }
-                        </span>
-                      </h2>
-                      <p className="muted">选择镜头，逐一雕琢。</p>
-                    </div>
-                    <button
-                      disabled={
-                        busy ||
-                        !apr.shots.length ||
-                        (videoProvider === "openai-video" && !remoteConsent)
-                      }
-                      onClick={() =>
-                        generate(
-                          apr.shots
-                            .filter((s) => !s.locked && s.status !== "archived")
-                            .map((s) => s.id),
-                        )
-                      }
-                    >
-                      <Plus size={16} />
-                      生成全部镜头
-                    </button>
-                  </div>
-                  {!apr.shots.length && (
-                    <div className="story-empty">
-                      <Clapperboard size={46} strokeWidth={1} />
-                      <h2>故事正在等待第一帧</h2>
-                      <p>在左侧生成分镜建议，审阅后加入项目。</p>
-                    </div>
-                  )}
-                  <div className="shot-grid">
-                    {apr.shots
-                      .filter((s) => s.status !== "archived")
-                      .map((shot) => {
-                        const version = apr.asset_versions.find(
-                          (v) => v.id === shot.active_asset_version_id,
-                        );
-                        const currentJob = activeJobs.find(
-                          (j) => j.target_entity_id === shot.id,
-                        );
-                        return (
-                          <article
-                            className="shot-card"
-                            data-testid="shot-card"
-                            key={shot.id}
-                          >
-                            <button
-                              className={`shot-visual visual-${shot.order % 4}`}
-                              aria-label={`预览 ${shot.title}`}
-                              disabled={!version}
-                              onClick={() => setPreviewAsset(version!.asset_id)}
-                            >
-                              {version ? (
-                                <img
-                                  src={mediaUrl(
-                                    apr.project_id,
-                                    version.poster_asset_id,
-                                  )}
-                                  alt={`${shot.title} 素材预览`}
-                                />
-                              ) : (
-                                <div className="shot-placeholder">
-                                  <Film size={30} strokeWidth={1} />
-                                  <span>等待生成素材</span>
-                                </div>
-                              )}
-                              <span className="shot-number">
-                                SHOT {String(shot.order + 1).padStart(2, "0")}
-                              </span>
-                              <span className="duration">
-                                {framesToTime(shot.duration_frames, apr.format)}
-                              </span>
-                            </button>
-                            <div className="shot-info">
-                              <div className="shot-title">
-                                <h3>{shot.title}</h3>
-                                {shot.locked && (
-                                  <Lock size={14} aria-label="已锁定" />
-                                )}
-                              </div>
-                              <Status
-                                state={currentJob?.state || shot.status}
-                              />
-                              <p>{shot.action}</p>
-                              <footer>
-                                <span>
-                                  {shot.camera.shot_size} ·{" "}
-                                  {shot.camera.movement}
-                                </span>
-                                <button
-                                  className="text-button"
-                                  aria-label="编辑镜头"
-                                  onClick={() => setEditing(shot)}
-                                >
-                                  编辑 <ArrowRight size={14} />
-                                </button>
-                              </footer>
-                            </div>
-                          </article>
-                        );
-                      })}
-                  </div>
-                </section>
+                </details>
+                <CreationWorkspace
+                  key={apr.project_id}
+                  project={apr}
+                  busy={busy}
+                  run={run}
+                  edit={setEditing}
+                  generate={generate}
+                  canGenerate={
+                    !(videoProvider.startsWith("openai-") && !remoteConsent)
+                  }
+                />
               </div>
             )}
             {tab === "continuity" && (
@@ -789,123 +673,36 @@ export function App() {
               />
             )}
             {tab === "jobs" && (
-              <section className="page compact">
-                <div className="section-heading">
-                  <h2>任务与执行记录</h2>
-                  <span className="muted">{activeJobs.length} 个活动任务</span>
-                </div>
-                <ProjectBudget
-                  projectId={apr.project_id}
-                  run={run}
-                  busy={busy}
-                />
-                {!jobs.data?.length && (
-                  <p className="muted">生成镜头后，执行记录会出现在这里。</p>
-                )}
-                {jobs.data?.map((j) => (
-                  <article className="job-row panel" key={j.id}>
-                    <div>
-                      <h3>
-                        {j.operation === "generate_video"
-                          ? `镜头 ${(apr.shots.find((s) => s.id === j.target_entity_id)?.order ?? 0) + 1} · ${j.provider_id === "mock-video-local" ? "生成测试视频" : "生成视频"}`
-                          : {
-                              generate_image: "生成参考图像",
-                              generate_speech: "合成语音旁白",
-                              import_audio: "导入音频素材",
-                              review_shot: "镜头审片与证据",
-                              export_project: "导出工程",
-                              restore_project: "恢复工程副本",
-                            }[j.operation] || "时间轴 · 渲染成片"}
-                      </h3>
-                      <small>
-                        {j.provider_id} · 尝试 {j.attempt} ·{" "}
-                        {j.elapsed_ms == null
-                          ? "等待结果"
-                          : `${(j.elapsed_ms / 1000).toFixed(1)} 秒`}
-                      </small>
-                      <progress value={j.progress} max={100} />
-                      {j.error && (
-                        <p className="job-error">
-                          {j.error.code} · {j.error.message}
-                        </p>
-                      )}
-                      {j.external_task_id && (
-                        <p className="muted">远端任务 {j.external_task_id}</p>
-                      )}
-                      {j.artifact && j.state === "completed" && (
-                        <a
-                          className="button"
-                          href={`/api/v1/projects/${apr.project_id}/exports/${j.id}/file`}
-                          download
-                        >
-                          <Download size={15} />
-                          下载 {j.artifact.filename}
-                        </a>
-                      )}
-                      {j.remote_notice && (
-                        <p className="protocol-note">{j.remote_notice}</p>
-                      )}
-                      {j.provider_id.startsWith("openai-") &&
-                        ["failed", "cancelled"].includes(j.state) && (
-                          <RemoteJobRecovery
-                            job={j}
-                            projectId={apr.project_id}
-                            busy={busy}
-                            run={run}
-                          />
-                        )}
-                      <details>
-                        <summary>请求与溯源</summary>
-                        <pre>{JSON.stringify(j.request, null, 2)}</pre>
-                        <small>输入哈希 {j.input_summary.request_hash}</small>
-                      </details>
-                    </div>
-                    <Status state={j.state} />
-                    {[
-                      "queued",
-                      "claimed",
-                      "running",
-                      "verifying",
-                      "retry_wait",
-                    ].includes(j.state) && (
-                      <button
-                        disabled={busy}
-                        onClick={() =>
-                          void run(() =>
-                            api(
-                              `/projects/${projectId}/jobs/${j.id}/cancel`,
-                              {},
-                            ),
-                          )
-                        }
-                      >
-                        取消
-                      </button>
-                    )}
-                    {["failed", "cancelled"].includes(j.state) &&
-                      j.error?.code !== "PROVIDER_JOB_FAILED" && (
-                        <button
-                          disabled={busy}
-                          onClick={() =>
-                            void run(() =>
-                              api(
-                                `/projects/${projectId}/jobs/${j.id}/retry`,
-                                {},
-                              ),
-                            )
-                          }
-                        >
-                          重试
-                        </button>
-                      )}
-                  </article>
-                ))}
-                <EventLog projectId={apr.project_id} />
-              </section>
+              <JobList
+                key={apr.project_id}
+                project={apr}
+                run={run}
+                busy={busy}
+                events={activity.data?.items || []}
+              />
             )}
             {tab === "assets" && (
               <section className="page compact">
                 <h2>素材与候选版本</h2>
+                <ImageUpload project={apr} run={run} busy={busy} />
+                <div className="reference-library">
+                  {apr.assets
+                    .filter((a) => a.media_type === "image")
+                    .map((asset) => (
+                      <a
+                        key={asset.id}
+                        href={mediaUrl(apr.project_id, asset.id)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <img
+                          src={mediaUrl(apr.project_id, asset.id)}
+                          alt={asset.provenance.name || "参考图像"}
+                          loading="lazy"
+                        />
+                      </a>
+                    ))}
+                </div>
                 <div className="asset-grid">
                   {apr.asset_versions.map((v, index) => (
                     <article className="panel asset-card" key={v.id}>
@@ -1121,9 +918,10 @@ export function App() {
       )}
       {historyOpen && apr && (
         <Modal title="项目版本记录" close={() => setHistoryOpen(false)}>
+          {history.pagination}
           {history.isPending && <p className="muted">正在读取版本记录…</p>}
           {history.error && <p role="alert">{history.error.message}</p>}
-          {history.data?.map((r) => (
+          {history.data?.items.map((r) => (
             <div className="history-row" key={r.revision}>
               <strong>r{r.revision}</strong>
               <div>
@@ -1527,36 +1325,5 @@ function ProjectSettings({
         </>
       )}
     </Modal>
-  );
-}
-
-function EventLog({ projectId }: { projectId: string }) {
-  const client = useQueryClient();
-  const events = useQuery({
-    queryKey: ["events", projectId],
-    queryFn: async () => {
-      const previous =
-        client.getQueryData<ProjectEvent[]>(["events", projectId]) || [];
-      const newer = await fetchEventHistory(
-        projectId,
-        previous.at(-1)?.event_id || 0,
-      );
-      return [...previous, ...newer].slice(-500);
-    },
-    refetchInterval: 2000,
-  });
-  return (
-    <details className="panel event-log">
-      <summary>最近 500 条持久化事件</summary>
-      {events.data?.map((event) => (
-        <div key={event.event_id}>
-          <small>
-            #{event.event_id} ·{" "}
-            {new Date(event.timestamp * 1000).toLocaleTimeString()}
-          </small>{" "}
-          {event.type}
-        </div>
-      ))}
-    </details>
   );
 }

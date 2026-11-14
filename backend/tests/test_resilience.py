@@ -103,7 +103,7 @@ def test_permanent_storage_error_does_not_retry(client, monkeypatch):
         failed = (
             connection.execute(select(db.jobs).where(db.jobs.c.state == "failed")).mappings().one()
         )
-        assert failed["payload"]["error"]["code"] == "STORAGE_ERROR"
+        assert failed["payload"]["error"]["code"] == "STORAGE_FULL"
         assert failed["attempt"] == 1
 
 

@@ -1,3 +1,4 @@
+import { LocalMaintenance } from "./LocalMaintenance";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, Database, HardDrive, RefreshCw } from "lucide-react";
 import { api } from "./api";
@@ -259,6 +260,7 @@ export function OperationsDashboard({ projectId }: { projectId?: string }) {
           刷新运行状态
         </button>
       </header>
+      <LocalMaintenance key={projectId || "global"} projectId={projectId} />
       {(runtime.isError || project.isError) && (
         <p role="alert">暂时无法读取运行状态，请刷新或检查本机 API。</p>
       )}

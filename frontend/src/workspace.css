@@ -1,0 +1,471 @@
+.creation-workspace {
+  min-width: 0;
+}
+.studio-heading {
+  padding: 22px 24px;
+}
+.studio-heading h1 {
+  font-size: 25px;
+}
+.dashboard h1 {
+  font-size: 34px;
+  line-height: 1.3;
+}
+.studio-layout {
+  display: block;
+  padding: 0 24px 24px;
+}
+.director.panel {
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  position: static;
+  width: auto;
+}
+.director > summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+.director > header {
+  margin-top: 18px;
+}
+.director .brief-card {
+  margin: 12px 0;
+}
+.director .director-input {
+  margin-top: 14px;
+}
+.director .proposal {
+  max-width: 900px;
+}
+.canvas-heading {
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.canvas-heading h2 span {
+  color: var(--muted);
+  font-size: 13px;
+  margin-left: 10px;
+}
+.canvas-heading p {
+  margin: 4px 0 0;
+}
+.canvas-actions,
+.segmented {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.segmented {
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  gap: 2px;
+  background: #171719;
+}
+.segmented button {
+  border: 0;
+  background: transparent;
+  padding: 5px 12px;
+}
+.segmented button[aria-pressed="true"] {
+  background: #38383d;
+  color: #fff;
+}
+.creation-columns {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) 360px;
+  gap: 18px;
+  align-items: start;
+}
+.canvas-column {
+  min-width: 0;
+  position: relative;
+}
+.shot-canvas {
+  min-height: 620px;
+  height: min(70vh, 860px);
+  overflow: hidden;
+  position: relative;
+  border: 1px solid #313135;
+  border-radius: 12px;
+  background-color: #151517;
+  background-image: radial-gradient(#37373b 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.shot-canvas.canvas {
+  touch-action: none;
+  cursor: grab;
+}
+.shot-canvas.canvas:active {
+  cursor: grabbing;
+}
+.canvas-world {
+  transform-origin: 0 0;
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+.canvas-shot {
+  pointer-events: auto;
+  position: absolute;
+  width: 270px;
+  background: #202023;
+  border: 1px solid #3b3b41;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 20px #0003;
+}
+.canvas-shot.selected {
+  border-color: #b6afff;
+  box-shadow:
+    0 0 0 1px #b6afff40,
+    0 8px 24px #0004;
+}
+.canvas-shot .node-handle {
+  touch-action: none;
+  border: 0;
+  background: #27272b;
+  padding: 9px 12px;
+  width: 100%;
+  justify-content: space-between;
+  border-radius: 0;
+  color: #bcbcc6;
+  font-size: 11px;
+  cursor: move;
+}
+.canvas-shot .node-select {
+  white-space: normal;
+  padding: 0;
+  display: block;
+  text-align: left;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.node-poster {
+  position: relative;
+  height: 150px;
+  background: #19191c;
+}
+.node-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.node-placeholder {
+  display: flex;
+  height: 100%;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  color: #777781;
+  font-size: 12px;
+}
+.node-description {
+  padding: 12px;
+}
+.node-description strong {
+  display: block;
+  color: #eeeef3;
+  margin-bottom: 8px;
+}
+.node-description p {
+  color: #a0a0ac;
+  font-size: 12px;
+  margin: 8px 0 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 36px;
+}
+.node-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 12px 10px;
+  font-size: 11px;
+  color: #9999a4;
+}
+.node-references {
+  border-top: 1px solid var(--line);
+  padding: 8px 12px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.node-references img {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+  flex-wrap: wrap;
+}
+.canvas-toolbar small {
+  margin-right: auto;
+}
+.canvas-toolbar button {
+  font-size: 11px;
+  padding: 6px 8px;
+}
+.canvas-toolbar > span {
+  width: 40px;
+  text-align: center;
+  font-size: 11px;
+}
+.shot-jump {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.shot-jump select {
+  max-width: 300px;
+}
+.shot-inspector {
+  padding: 16px;
+  min-width: 0;
+  max-height: 84vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.shot-inspector > header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.shot-inspector h2 {
+  font-size: 16px;
+  margin: 4px 0;
+}
+.shot-inspector h3 {
+  margin-top: 18px;
+}
+.shot-inspector button {
+  font-size: 11px;
+  padding: 7px 10px;
+}
+.inspector-actions {
+  margin-top: 14px;
+}
+.candidate-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.candidate {
+  min-width: 0;
+}
+.candidate video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16/10;
+  background: #09090a;
+  border-radius: 6px;
+  margin-top: 8px;
+}
+.candidate small {
+  display: block;
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+.candidate button {
+  width: 100%;
+  white-space: normal;
+}
+.candidate label,
+.reference-editor label,
+.human-feedback label {
+  font-size: 12px;
+  display: block;
+  margin: 10px 0;
+}
+.candidate select,
+.reference-editor select,
+.human-feedback select {
+  width: 100%;
+  font-size: 12px;
+  margin-top: 6px;
+}
+.reference-editor,
+.human-feedback {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 16px;
+}
+.reference-editor summary,
+.human-feedback summary,
+.image-import summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+.reference-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 130px;
+  margin-top: 8px;
+  border-radius: 6px;
+}
+.image-import {
+  padding: 14px;
+  margin: 14px 0;
+}
+.image-import label {
+  display: block;
+  margin: 14px 0;
+  font-size: 12px;
+}
+.image-import input[type="file"] {
+  max-width: 100%;
+  font-size: 12px;
+  padding: 8px 0;
+  border: 0;
+}
+.score-inputs {
+  display: flex;
+  gap: 10px;
+}
+.score-inputs label {
+  flex: 1;
+}
+.feedback-record {
+  border-top: 1px solid var(--line);
+  padding: 12px 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.feedback-record small {
+  display: block;
+  margin-top: 6px;
+}
+.reference-library {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.reference-library img {
+  width: 100%;
+  height: 110px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 12px;
+}
+.pagination button {
+  padding: 6px 10px;
+  font-size: 11px;
+}
+.job-filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0;
+}
+.job-filter select {
+  max-width: 200px;
+}
+.canvas-empty {
+  padding: 100px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.shot-canvas.grid {
+  height: auto;
+  min-height: 300px;
+  padding: 18px;
+  background-image: none;
+}
+.grid .canvas-world {
+  position: static;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 18px;
+}
+.grid .canvas-shot {
+  position: static;
+  width: 100%;
+}
+.grid .node-handle {
+  cursor: default;
+}
+@media (max-width: 1250px) {
+  .creation-columns {
+    grid-template-columns: minmax(280px, 1fr) 320px;
+  }
+  .candidate-pair {
+    grid-template-columns: 1fr;
+  }
+  .candidate video {
+    max-height: 200px;
+  }
+}
+@media (max-width: 960px) {
+  .creation-columns {
+    grid-template-columns: 1fr;
+  }
+  .shot-inspector {
+    max-height: none;
+  }
+  .candidate-pair {
+    grid-template-columns: 1fr 1fr;
+  }
+  .shot-canvas {
+    min-height: 500px;
+    height: 60vh;
+  }
+}
+@media (max-width: 600px) {
+  .studio-layout {
+    padding: 0 14px 20px;
+  }
+  .canvas-toolbar small {
+    width: 100%;
+    margin-bottom: 5px;
+  }
+  .canvas-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .candidate-pair {
+    grid-template-columns: 1fr;
+  }
+  .shot-canvas {
+    min-height: 430px;
+    height: 55vh;
+  }
+  .canvas-shot {
+    width: 250px;
+  }
+  .shot-inspector {
+    padding: 14px;
+  }
+  .shot-jump select {
+    min-width: 0;
+    width: 75%;
+  }
+}

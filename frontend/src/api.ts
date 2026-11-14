@@ -45,6 +45,11 @@ export async function api<T>(
   const data = await response.json();
   if (!response.ok) {
     const messages: Record<string, string> = {
+      STORAGE_FULL: "本机存储空间不足，请腾出空间后重试。",
+      REFERENCE_INPUT_UNSUPPORTED:
+        "当前模型接口未映射所选图像输入，请在 ComfyUI 工作流设置中配置相应参考图角色。",
+      REMOTE_SUBMISSION_UNCERTAIN:
+        "远端提交结果尚未确认，请在任务队列中核对服务商状态和费用后再操作。",
       BUDGET_EXCEEDED:
         "预估费用超过项目剩余预算，请在任务页调整预算或减少生成数量。",
       UNKNOWN_COST_BLOCKED:

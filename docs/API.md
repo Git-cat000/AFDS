@@ -1,8 +1,36 @@
-# AFDS v0.4 API
+# AFDS v0.6 API
 
 Base path is `/api/v1`. The development API is available at `http://127.0.0.1:8000`. Interactive schemas are at `/docs` and `/openapi.json`.
 
 Project, scene, shot, asset and job IDs are UUIDs. Provider slots use category identifiers. Project changes require `base_revision`. The server checks revision inside the same SQLite write transaction. Conflicts return HTTP 409. Mutations use JSON, including soft-archive DELETE requests. This release serves a single local user.
+
+## Bounded reads and durable creation
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/projects/{pid}/jobs/page` | Lightweight task summaries with global active counts and operation counts |
+| GET | `/projects/{pid}/jobs/{jid}` | Owned full task detail, including request and cleanup receipt |
+| GET | `/projects/{pid}/budget/summary` | Exact budget totals and entry count |
+| GET | `/projects/{pid}/budget/entries` | Paged reconciliation records |
+| GET | `/projects/{pid}/revisions/page` | Paged revision metadata |
+| GET | `/projects/{pid}/activity` | Latest 200 events on first read, then bounded incremental events using `after` |
+| POST | `/projects/{pid}/planning/storyboard` | Queue storyboard proposal, 202 |
+| POST | `/projects/{pid}/planning/semantic` | Queue structured or LLM semantic proposal, 202 |
+| POST | `/projects/{pid}/images/import` | Queue rights-confirmed raw image import, 202 |
+| GET / POST | `/projects/{pid}/feedback` | Paged human feedback / approved version-bound feedback creation |
+| GET | `/system/report?project_id={pid}` | Download sanitized local diagnostic JSON |
+| POST | `/projects/{pid}/maintenance/cleanup/preview` | Store bounded file cleanup preview |
+| POST | `/projects/{pid}/maintenance/cleanup` | Queue deletion of explicitly approved preview, 202 |
+
+History pages accept `limit` from 1 to 100, default 25, and opaque `cursor`. Responses contain `items`, `total`, `next_cursor` and `has_more`. Jobs additionally accept `state` values `all`, `active`, `completed`, `failed`, `cancelled`, `needs_review`. Counts remain project-wide while browsing old or filtered history. Cursor scope includes project, resource and filter. Activity returns `cursor` and `has_more` and excludes event payload content. Existing array routes remain available.
+
+Planning bodies retain the director or semantic-edit fields and require a UUID `request_id`. Repeating the same ID and body returns the same task. A changed body with that ID returns `REQUEST_ID_CONFLICT`. Completed tasks include `result_plan_id`. The existing plan approval endpoints apply the proposal with revision validation. Unknown remote submission outcomes require explicit recovery authorization through task controls.
+
+Image import uses the raw request body with query fields `base_revision`, `name`, `rights_confirmed=true`. PNG, JPEG and WebP inputs are bounded at 16 MiB and 16 million pixels. APR 0.3 adds optional `shot.reference_images` roles `reference_image`, `start_image`, `end_image`, each pointing to an owned image asset. Changes use the standard changeset preview and commit. APR 0.1/0.2 imports normalize to 0.3. ComfyUI workflow bindings accept the same role names and upload owned image bytes through `/upload/image` before prompt submission.
+
+Feedback creation requires `base_revision`, `approved=true`, `shot_id`, `version_id`, verdict `accepted`, `rejected` or `needs_work`, optional `report_id`, `scores` containing integer values 1–5 for `continuity`, `action`, `overall`, and `note` up to 2000 characters. Records bind the immutable asset hash and return `matches_current_selection` when listed. List requests can filter `shot_id`.
+
+Cleanup preview requires `base_revision`. The returned plan contains exact candidate identities, total bytes, scan/truncation information, a 15-minute expiry and `preview_token`. Queue requests require `plan_id`, `preview_token`, `base_revision`, `approved=true`. The Worker rechecks file registration, identity, age, path containment, revision, cancellation and lease ownership before each deletion. The task retains cumulative `cleanup_result` with deleted, skipped and already-absent counts, including interrupted attempts.
 
 ## Projects and revisions
 

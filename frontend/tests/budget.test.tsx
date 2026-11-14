@@ -40,7 +40,15 @@ it("requires billing confirmation and submits a zero actual charge with project 
   const fetcher = vi
     .spyOn(globalThis, "fetch")
     .mockImplementation(
-      async () => new Response(JSON.stringify(data), { status: 200 }),
+      async (url) =>
+        new Response(
+          JSON.stringify(
+            String(url).includes("/budget/entries?")
+              ? { items: data.entries, total: 1, next_cursor: null }
+              : { ...data, entry_count: 1 },
+          ),
+          { status: 200 },
+        ),
     );
   render(
     <QueryClientProvider
@@ -57,6 +65,7 @@ it("requires billing confirmation and submits a zero actual charge with project 
       />
     </QueryClientProvider>,
   );
+  fireEvent.click(await screen.findByText("费用明细与对账（1）"));
   const button = await screen.findByRole("button", { name: "确认实际费用" });
   expect((button as HTMLButtonElement).disabled).toBe(true);
   fireEvent.change(screen.getByLabelText("实际费用 charge-1"), {

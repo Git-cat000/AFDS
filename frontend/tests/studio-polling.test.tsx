@@ -58,17 +58,39 @@ function studio(state = "completed") {
       ok: true,
       json: async () => {
         if (path.endsWith("/apr")) return structuredClone(apr);
-        if (path.endsWith("/jobs")) return [{ ...job }];
+        if (path.includes("/jobs/page?"))
+          return {
+            items: [{ ...job }],
+            total: 1,
+            active_count: [
+              "queued",
+              "claimed",
+              "running",
+              "verifying",
+              "retry_wait",
+              "cancel_requested",
+            ].includes(job.state)
+              ? 1
+              : 0,
+            active_operations: {},
+            next_cursor: null,
+          };
+        if (path.includes("/activity"))
+          return { items: [], cursor: 0, has_more: false };
         if (path.endsWith("/projects")) return [apr];
-        if (path.endsWith("/revisions"))
-          return [
-            {
-              revision: apr.revision,
-              reason: "DEMO saved",
-              author: "user",
-              created_at: 1,
-            },
-          ];
+        if (path.includes("/revisions/page?"))
+          return {
+            items: [
+              {
+                revision: apr.revision,
+                reason: "DEMO saved",
+                author: "user",
+                created_at: 1,
+              },
+            ],
+            total: 1,
+            next_cursor: null,
+          };
         if (path.endsWith("/settings/models")) return { defaults: {} };
         if (path.endsWith("/budget"))
           return {
@@ -94,26 +116,26 @@ function studio(state = "completed") {
     </QueryClientProvider>,
   );
   const requests = (suffix: string) =>
-    fetcher.mock.calls.filter(([path]) => path.endsWith(suffix)).length;
+    fetcher.mock.calls.filter(([path]) => path.includes(suffix)).length;
   return { apr, job, client, requests, submissions };
 }
 
 it("fetches revisions only while history is open and refreshes after project changes", async () => {
   const { apr, client, requests } = studio();
   await screen.findByRole("button", { name: "版本记录" });
-  expect(requests("/revisions")).toBe(0);
+  expect(requests("/revisions/page?")).toBe(0);
   fireEvent.click(screen.getByRole("button", { name: "版本记录" }));
   await screen.findByText("r1");
-  expect(requests("/revisions")).toBe(1);
+  expect(requests("/revisions/page?")).toBe(1);
   fireEvent.click(screen.getByRole("button", { name: "关闭" }));
   await act(async () => {
     apr.revision = 2;
     client.setQueryData(["project", apr.project_id], { ...apr });
   });
-  expect(requests("/revisions")).toBe(1);
+  expect(requests("/revisions/page?")).toBe(1);
   fireEvent.click(screen.getByRole("button", { name: "版本记录" }));
   await screen.findByText("r2");
-  expect(requests("/revisions")).toBe(2);
+  expect(requests("/revisions/page?")).toBe(2);
 });
 
 it("counts cancellation requests as active until cancellation finishes", async () => {
@@ -125,7 +147,12 @@ it("counts cancellation requests as active until cancellation finishes", async (
   );
   await act(async () => {
     job.state = "cancelled";
-    client.setQueryData(["jobs", apr.project_id], [{ ...job }]);
+    client.setQueryData(["jobs", apr.project_id, "summary"], {
+      items: [{ ...job }],
+      total: 1,
+      active_count: job.state === "cancel_requested" ? 1 : 0,
+      active_operations: {},
+    });
   });
   await waitFor(() =>
     expect(screen.getByRole("button", { name: /任务队列/ }).textContent).toBe(
@@ -140,27 +167,32 @@ it("slows idle polling and resumes fast polling when work becomes active", async
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
-  expect(requests("/jobs")).toBe(1);
+  expect(requests("/jobs/page?")).toBe(1);
   expect(requests("/apr")).toBe(1);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(2000);
   });
-  expect(requests("/jobs")).toBe(1);
+  expect(requests("/jobs/page?")).toBe(1);
   expect(requests("/apr")).toBe(1);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(3000);
   });
-  expect(requests("/jobs")).toBe(2);
+  expect(requests("/jobs/page?")).toBe(2);
   expect(requests("/apr")).toBe(2);
   await act(async () => {
     job.state = "cancel_requested";
-    client.setQueryData(["jobs", apr.project_id], [{ ...job }]);
+    client.setQueryData(["jobs", apr.project_id, "summary"], {
+      items: [{ ...job }],
+      total: 1,
+      active_count: job.state === "cancel_requested" ? 1 : 0,
+      active_operations: {},
+    });
     await vi.advanceTimersByTimeAsync(0);
   });
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1500);
   });
-  expect(requests("/jobs")).toBe(3);
+  expect(requests("/jobs/page?")).toBe(3);
   expect(requests("/apr")).toBe(3);
 });
 

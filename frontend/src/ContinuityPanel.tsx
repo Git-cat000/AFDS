@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { queuePlanning, type JobPage } from "./history";
 import { api } from "./api";
 import "./continuity.css";
 
@@ -113,7 +115,31 @@ export function ContinuityPanel({
   const [shotId, setShotId] = useState("");
   const [stateId, setStateId] = useState("");
   const [linkId, setLinkId] = useState("");
-  const [plan, setPlan] = useState<Plan | null>(null);
+  const [manualPlan, setPlan] = useState<Plan | null>(null);
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  const queued = useQuery({
+    queryKey: ["jobs", project.project_id, "semantic-summary"],
+    queryFn: () =>
+      api<JobPage>(`/projects/${project.project_id}/jobs/page?limit=1`),
+    refetchInterval: 2000,
+  });
+  const proposals = useQuery({
+    queryKey: ["plans", project.project_id],
+    queryFn: () => api<Plan[]>(`/projects/${project.project_id}/plans`),
+    refetchInterval: 2000,
+  });
+  const plan =
+    manualPlan ||
+    proposals.data
+      ?.filter(
+        (p) =>
+          p.type === "semantic_edit" &&
+          p.state === "proposed" &&
+          !dismissed.includes(p.id),
+      )
+      .at(-1) ||
+    null;
+  const planning = (queued.data?.active_operations.plan_semantic || 0) > 0;
   const [history, setHistory] = useState<Plan[]>([]);
   const root = `/projects/${project.project_id}`;
   const entities =
@@ -266,18 +292,19 @@ export function ContinuityPanel({
       <SemanticEditor
         key={project.project_id}
         project={project}
-        busy={busy}
+        busy={busy || planning}
         submit={(body) =>
-          run(async () =>
-            setPlan(
-              await api<Plan>(`${root}/semantic-edits`, {
-                base_revision: project.revision,
-                ...body,
-              }),
-            ),
-          )
+          run(async () => {
+            await queuePlanning(project.project_id, "semantic", {
+              base_revision: project.revision,
+              ...body,
+            });
+          })
         }
       />
+      {planning && (
+        <p role="status">正在生成语义修改建议，可在任务队列查看进度或取消。</p>
+      )}
       <div className="button-row continuity-history">
         <button
           disabled={busy}
@@ -343,6 +370,7 @@ export function ContinuityPanel({
                     base_revision: project.revision,
                     approved: true,
                   });
+                  setDismissed((ids) => [...ids, plan.id]);
                   setPlan(null);
                   setHistory((items) => items.filter((p) => p.id !== plan.id));
                 })
@@ -350,7 +378,13 @@ export function ContinuityPanel({
             >
               批准并应用
             </button>
-            <button disabled={busy} onClick={() => setPlan(null)}>
+            <button
+              disabled={busy}
+              onClick={() => {
+                setDismissed((ids) => [...ids, plan!.id]);
+                setPlan(null);
+              }}
+            >
               关闭预览
             </button>
           </div>

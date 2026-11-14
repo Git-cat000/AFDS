@@ -33,6 +33,9 @@ export type Shot = {
   character_ids?: string[];
   input_state_ref?: string | null;
   output_state_ref?: string | null;
+  reference_images?: Partial<
+    Record<"reference_image" | "start_image" | "end_image", string>
+  >;
 };
 export type Asset = {
   id: string;
@@ -46,6 +49,8 @@ export type Asset = {
     prompt_hash: string;
     is_mock?: boolean;
     contains_mock?: boolean;
+    name?: string;
+    rights_confirmed?: boolean;
   };
 };
 export type AssetVersion = {
@@ -161,7 +166,10 @@ export type Job = {
   provider_id: string;
   elapsed_ms: number | null;
   error: { code: string; message: string } | null;
-  request: unknown;
+  request?: unknown;
+  protocol?: string;
+  result_plan_id?: string;
+  cleanup_result?: Record<string, unknown>;
   input_summary: { request_hash: string };
   external_task_id?: string | null;
   remote_notice?: string;
@@ -220,7 +228,15 @@ export type WorkflowTemplate = {
   >;
   bindings: Partial<
     Record<
-      "prompt" | "seed" | "width" | "height" | "frames" | "fps",
+      | "prompt"
+      | "seed"
+      | "width"
+      | "height"
+      | "frames"
+      | "fps"
+      | "reference_image"
+      | "start_image"
+      | "end_image",
       { node_id: string; input_name: string }
     >
   >;

@@ -1,0 +1,175 @@
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, expect, it, vi } from "vitest";
+import { CreationWorkspace } from "../src/CreationWorkspace";
+import type { Project } from "../src/types";
+
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  vi.unstubAllGlobals();
+});
+function setup() {
+  const shot = {
+    id: "shot",
+    scene_id: "scene",
+    order: 0,
+    title: "DEMO shot",
+    action: "Walk",
+    emotion: "calm",
+    duration_frames: 48,
+    camera: { shot_size: "wide", movement: "still" },
+    locked: false,
+    status: "ready",
+    active_asset_version_id: "v1",
+  };
+  const project = {
+    project_id: "demo",
+    revision: 4,
+    title: "DEMO",
+    brief: "",
+    format: { width: 320, height: 180, fps_num: 24, fps_den: 1 },
+    style_bible: {},
+    shots: [shot],
+    assets: [
+      {
+        id: "image",
+        sha256: "imagehash",
+        media_type: "image",
+        provenance: { name: "DEMO reference" },
+      },
+      {
+        id: "a1",
+        sha256: "hash1",
+        media_type: "video",
+        provenance: { is_mock: true },
+      },
+    ],
+    asset_versions: [1, 2].map((i) => ({
+      id: `v${i}`,
+      shot_id: "shot",
+      asset_id: `a${i}`,
+      poster_asset_id: `p${i}`,
+      status: "ready",
+      generated_by_job_id: "job",
+    })),
+    timeline: { tracks: [{ id: "v", type: "video", items: [] }] },
+  } as unknown as Project;
+  const fetcher = vi.fn(
+    async (url: string) =>
+      new Response(
+        JSON.stringify(
+          url.endsWith("/reviews")
+            ? []
+            : url.includes("/feedback?")
+              ? { items: [], next_cursor: null, total: 0 }
+              : url.endsWith("/changesets/preview")
+                ? {
+                    affected_shot_ids: ["shot"],
+                    protected_shot_ids: [],
+                    render_invalidated: true,
+                    changes: [],
+                  }
+                : {},
+        ),
+        { status: 200 },
+      ),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  const renderView = () =>
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <CreationWorkspace
+          project={project}
+          run={async (action) => {
+            await action();
+          }}
+          busy={false}
+          edit={vi.fn()}
+          generate={vi.fn()}
+          canGenerate
+        />
+      </QueryClientProvider>,
+    );
+  renderView();
+  return { fetcher, renderView };
+}
+it("persists keyboard arrangement and zoom and restores the canvas after reopening", () => {
+  const { renderView } = setup();
+  fireEvent.keyDown(screen.getByRole("button", { name: "移动 DEMO shot" }), {
+    key: "ArrowRight",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "缩小画布" }));
+  expect(screen.getByText("90%")).toBeTruthy();
+  expect(
+    JSON.parse(localStorage.getItem("afds-canvas-demo")!).positions.shot.x,
+  ).toBe(20);
+  cleanup();
+  renderView();
+  expect(screen.getByText("90%")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "自动排列" }));
+  expect(screen.getByText("100%")).toBeTruthy();
+});
+it("previews candidate selection and explicitly approves the captured revision", async () => {
+  const { fetcher } = setup();
+  fireEvent.click(screen.getByRole("button", { name: "预览选用候选 B" }));
+  await screen.findByRole("button", { name: "批准创作修改" });
+  expect(
+    fetcher.mock.calls.some(([url]) => url.endsWith("/changesets/commit")),
+  ).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "批准创作修改" }));
+  await waitFor(() =>
+    expect(
+      fetcher.mock.calls.some(([url]) => url.endsWith("/changesets/commit")),
+    ).toBe(true),
+  );
+  const request = fetcher.mock.calls.find(([url]) =>
+    url.endsWith("/changesets/commit"),
+  )!;
+  const body = JSON.parse(
+    String((request as unknown as [string, RequestInit])[1].body),
+  );
+  expect(body.base_revision).toBe(4);
+  expect(body.approved).toBe(true);
+  expect(body.operations[0]).toMatchObject({
+    field: "active_asset_version_id",
+    value: "v2",
+  });
+});
+it("binds human feedback to candidate A and keeps reference updates previewed", async () => {
+  const { fetcher } = setup();
+  fireEvent.click(screen.getByText("人工评价与迭代记录"));
+  fireEvent.change(screen.getByLabelText("评价与改进建议"), {
+    target: { value: "DEMO improve motion" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "确认记录人工评价" }));
+  await waitFor(() =>
+    expect(fetcher.mock.calls.some(([url]) => url.endsWith("/feedback"))).toBe(
+      true,
+    ),
+  );
+  fireEvent.click(screen.getByText("参考图与首尾帧"));
+  fireEvent.change(screen.getByLabelText("reference_image"), {
+    target: { value: "image" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "预览参考图修改" }));
+  await screen.findByRole("button", { name: "批准创作修改" });
+  const call = fetcher.mock.calls.find(([url]) => url.endsWith("/feedback"))!;
+  expect(
+    JSON.parse(String((call as unknown as [string, RequestInit])[1].body)),
+  ).toMatchObject({
+    version_id: "v1",
+    approved: true,
+    note: "DEMO improve motion",
+  });
+});

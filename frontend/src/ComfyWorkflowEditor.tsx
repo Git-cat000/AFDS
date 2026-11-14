@@ -85,7 +85,17 @@ export function ComfyWorkflowEditor({
           </p>
           <div className="editor-grid">
             {(
-              ["prompt", "seed", "width", "height", "frames", "fps"] as const
+              [
+                "prompt",
+                "seed",
+                "width",
+                "height",
+                "frames",
+                "fps",
+                "reference_image",
+                "start_image",
+                "end_image",
+              ] as const
             ).map((name) => (
               <label key={name}>
                 {
@@ -96,6 +106,9 @@ export function ComfyWorkflowEditor({
                     height: "高度映射",
                     frames: "帧数映射",
                     fps: "帧率映射",
+                    reference_image: "参考图映射",
+                    start_image: "首帧图映射",
+                    end_image: "尾帧图映射",
                   }[name]
                 }
                 <select

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
+import { useCursorPage } from "./history";
+type Summary = Omit<ProjectBudgetState, "entries"> & { entry_count: number };
 import type { ProjectBudgetState } from "./types";
 
 type Run = (action: () => Promise<unknown>) => Promise<void>;
@@ -16,7 +18,7 @@ export function ProjectBudget({
 }) {
   const query = useQuery({
     queryKey: ["budget", projectId],
-    queryFn: () => api<ProjectBudgetState>(`/projects/${projectId}/budget`),
+    queryFn: () => api<Summary>(`/projects/${projectId}/budget/summary`),
     refetchInterval: 2000,
   });
   if (query.error) return <p role="alert">{query.error.message}</p>;
@@ -38,7 +40,7 @@ function BudgetForm({
   run,
   busy,
 }: {
-  data: ProjectBudgetState;
+  data: Summary;
   projectId: string;
   run: Run;
   busy: boolean;
@@ -47,6 +49,13 @@ function BudgetForm({
   const [currency, setCurrency] = useState(data.currency);
   const [remote, setRemote] = useState(data.allow_remote);
   const [unknown, setUnknown] = useState(data.allow_unknown_cost);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const entries = useCursorPage<ProjectBudgetState["entries"][number]>(
+    "budget",
+    projectId,
+    "budget/entries",
+    detailsOpen,
+  );
   return (
     <section className="panel budget-panel">
       <h2>预算与隐私</h2>
@@ -89,7 +98,7 @@ function BudgetForm({
           <input
             aria-label="预算币种"
             maxLength={3}
-            disabled={data.entries.length > 0}
+            disabled={data.entry_count > 0}
             value={currency}
             onChange={(e) => setCurrency(e.target.value.toUpperCase())}
           />
@@ -135,10 +144,12 @@ function BudgetForm({
       >
         保存预算与隐私
       </button>
-      <details>
-        <summary>费用明细与对账（{data.entries.length}）</summary>
-        {!data.entries.length && <p className="muted">尚无模型费用记录。</p>}
-        {data.entries.map((entry) => (
+      <details onToggle={(e) => setDetailsOpen(e.currentTarget.open)}>
+        <summary>费用明细与对账（{data.entry_count}）</summary>
+        {!data.entry_count && <p className="muted">尚无模型费用记录。</p>}
+        {detailsOpen && entries.pagination}
+        {entries.error && <p role="alert">{entries.error.message}</p>}
+        {entries.data?.items.map((entry) => (
           <ChargeRow
             key={entry.id}
             entry={entry}

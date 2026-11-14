@@ -7,7 +7,7 @@ test("creates a film, edits a shot, generates footage and downloads the render",
   let revisionRequests = 0;
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("request", (request) => {
-    if (request.url().endsWith("/revisions")) revisionRequests++;
+    if (request.url().includes("/revisions/page?")) revisionRequests++;
   });
   await page.goto("/");
   await page.getByLabel("项目名称").fill(`雨夜告别 ${Date.now()}`);
@@ -19,6 +19,7 @@ test("creates a film, edits a shot, generates footage and downloads the render",
   ).toBeVisible();
   await page.getByRole("button", { name: "批准并加入分镜" }).click();
   await expect(page.getByTestId("shot-card")).toHaveCount(4);
+  await page.getByRole("button", { name: "网格", exact: true }).click();
   await page
     .getByTestId("shot-card")
     .nth(2)

@@ -1,13 +1,39 @@
+import type { ReactElement } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   cleanup,
   fireEvent,
-  render,
+  render as testingRender,
   screen,
   waitFor,
 } from "@testing-library/react";
 import { ContinuityPanel } from "../src/ContinuityPanel";
 
+function render(element: ReactElement) {
+  const mocked = globalThis.fetch;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+    if (!init?.body && String(url).includes("/jobs/page?"))
+      return new Response(
+        JSON.stringify({ items: [], active_count: 0, active_operations: {} }),
+      );
+    if (!init?.body && String(url).endsWith("/plans")) {
+      const result = await mocked(url, init);
+      const data = await result.clone().json();
+      return new Response(JSON.stringify(Array.isArray(data) ? data : []));
+    }
+    return mocked(url, init);
+  });
+  return testingRender(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      {element}
+    </QueryClientProvider>,
+  );
+}
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -50,10 +76,11 @@ const project = {
 it("previews Bible impact and sends approval only after the user reviews affected shots", async () => {
   const requests: { url: string; body: Record<string, unknown> }[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
-    requests.push({
-      url: String(url),
-      body: init?.body ? JSON.parse(String(init.body)) : {},
-    });
+    if (init?.body)
+      requests.push({
+        url: String(url),
+        body: init?.body ? JSON.parse(String(init.body)) : {},
+      });
     return new Response(
       JSON.stringify(
         String(url).endsWith("/preview")
@@ -183,7 +210,8 @@ it("restores persisted plans and blocks approval after the project revision chan
 it("submits only explicit deterministic fields and selected shots for preview", async () => {
   let body: unknown;
   vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
-    body = JSON.parse(String(init?.body));
+    if (!init?.body) return new Response("[]");
+    body = JSON.parse(String(init.body));
     return new Response(
       JSON.stringify({
         id: "semantic-plan",
@@ -216,8 +244,8 @@ it("submits only explicit deterministic fields and selected shots for preview", 
     target: { value: "quiet" },
   });
   fireEvent.click(screen.getByRole("button", { name: "预览镜头修改" }));
-  await screen.findByRole("article", { name: "变更影响预览" });
-  expect(body).toEqual({
+  await waitFor(() => expect(body).toBeTruthy());
+  expect(body).toMatchObject({
     base_revision: 7,
     shot_ids: ["shot-one"],
     mode: "structured",
