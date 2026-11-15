@@ -63,10 +63,7 @@ export function visibleItems(
   project: Project,
 ): CanvasItem[] {
   const shots: CanvasItem[] = project.shots
-    .filter(
-      (shot) =>
-        shot.status !== "archived" && !board.hiddenShots.includes(shot.id),
-    )
+    .filter((shot) => shot.status !== "archived")
     .map((shot, index) => ({
       id: shot.id,
       kind: "shot",
@@ -90,7 +87,10 @@ export function visibleItems(
         materials.push({ id: node.id, kind: "asset", asset, position });
     }
   }
-  return [...shots, ...materials];
+  return [
+    ...shots.filter((item) => !board.hiddenShots.includes(item.id)),
+    ...materials,
+  ];
 }
 
 export function loadBoard(project: Project, raw: string | null): CanvasBoard {

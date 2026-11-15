@@ -109,6 +109,54 @@ function setup() {
   };
 }
 
+it("deselects a keyboard-selected edge when another node is selected or Escape is pressed", async () => {
+  localStorage.setItem(
+    "afds-canvas-demo",
+    JSON.stringify({
+      nodes: [
+        { id: "asset-image", kind: "asset", assetId: "image" },
+        { id: "note-unrelated", kind: "note", text: "unrelated" },
+      ],
+      edges: [
+        { id: "line", source: "asset-image", target: "shot", label: "关联" },
+      ],
+    }),
+  );
+  setup();
+  const line = await screen.findByLabelText(
+    "DEMO reference → DEMO shot · 关联",
+    {},
+    { timeout: 5000 },
+  );
+  fireEvent.keyDown(line, { key: "Enter" });
+  fireEvent.keyUp(line, { key: "Enter" });
+  expect(screen.getByRole("region", { name: "连线设置" })).toBeTruthy();
+  fireEvent.keyDown(line, { key: "Escape" });
+  fireEvent.keyUp(line, { key: "Escape" });
+  await waitFor(() =>
+    expect(screen.queryByRole("region", { name: "连线设置" })).toBeNull(),
+  );
+  fireEvent.keyDown(line, { key: "Enter" });
+  fireEvent.keyUp(line, { key: "Enter" });
+  const note = screen
+    .getByPlaceholderText("写下想法、提示词或制作说明")
+    .closest(".react-flow__node")!;
+  fireEvent.keyDown(note, { key: "Enter" });
+  fireEvent.keyUp(note, { key: "Enter" });
+  await waitFor(() =>
+    expect(screen.queryByRole("region", { name: "连线设置" })).toBeNull(),
+  );
+  fireEvent.keyDown(note, { key: "Delete" });
+  fireEvent.keyUp(note, { key: "Delete" });
+  await waitFor(() => {
+    const board = JSON.parse(localStorage.getItem("afds-canvas-demo")!);
+    expect(
+      board.nodes.some((item: { id: string }) => item.id === "note-unrelated"),
+    ).toBe(false);
+    expect(board.edges).toHaveLength(1);
+  });
+});
+
 it("persists keyboard arrangement and zoom and restores the canvas after reopening", async () => {
   const { renderView } = setup();
   fireEvent.keyDown(

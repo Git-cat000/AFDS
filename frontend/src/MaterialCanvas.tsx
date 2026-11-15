@@ -306,7 +306,11 @@ function CanvasSurface({
   }
   function edgeChanges(changes: EdgeChange<CanvasEdge>[]) {
     for (const value of changes) {
-      if (value.type === "select" && value.selected) setSelectedEdge(value.id);
+      if (value.type === "select")
+        setSelectedEdge((current) => {
+          if (value.selected) return value.id;
+          return current === value.id ? null : current;
+        });
       if (
         value.type === "remove" &&
         !edges.find((item) => item.id === value.id)?.data?.actual

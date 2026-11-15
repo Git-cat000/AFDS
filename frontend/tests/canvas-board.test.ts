@@ -112,3 +112,16 @@ it("converts viewport drops correctly after pan and zoom, including negative spa
     y: -80,
   });
 });
+
+it("keeps untouched shot positions stable when a preceding shot is hidden", () => {
+  const source = {
+    ...project,
+    shots: ["first", "second", "third"].map((id) => ({
+      ...project.shots[0],
+      id,
+    })),
+  };
+  const initial = visibleItems(emptyBoard(), source);
+  const hidden = removeItems(emptyBoard(), source, ["first"], []);
+  expect(visibleItems(hidden, source)).toEqual(initial.slice(1));
+});
