@@ -53,6 +53,11 @@ def test_stage_library_import_is_immutable_and_resources_are_inspectable(client)
     assert skill["scripts"][0]["path"] == "scripts/inspect.py"
     assert import_package(client).json()["id"] == skill["id"]
     assert len(client.get("/api/v1/skills?stage=shots").json()["items"]) == 2
+    remapped = client.post(
+        "/api/v1/skills/import", json={"files": package_files(), "stages": ["image"]}
+    )
+    assert remapped.json()["id"] == skill["id"]
+    assert set(remapped.json()["stages"]) == {"shots", "image"}
     resource = client.get(
         f"/api/v1/skills/{skill['id']}/resource", params={"path": "references/framing.md"}
     )

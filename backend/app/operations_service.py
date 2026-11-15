@@ -32,6 +32,8 @@ OPERATIONS = {
     "plan_semantic",
     "import_image",
     "cleanup_storage",
+    "check_production",
+    "run_skill_script",
 }
 
 

@@ -59,7 +59,11 @@ class Worker:
             def checkpoint():
                 return self.queue.heartbeat(job["id"], self.owner)
 
-            if job["operation"] == "cleanup_storage":
+            if job["operation"] in {"check_production", "run_skill_script"}:
+                from app.skill_execution import SkillExecution
+
+                result = SkillExecution(self.database).execute(job, self.owner, work, checkpoint)
+            elif job["operation"] == "cleanup_storage":
                 from app.maintenance_service import MaintenanceService
 
                 result = MaintenanceService(self.database).execute(job, self.owner, checkpoint)
@@ -132,7 +136,11 @@ class Worker:
                     )
                     result["video"] = mixed
             elapsed_ms = int((time.monotonic() - started) * 1000)
-            if job["operation"] == "cleanup_storage":
+            if job["operation"] in {"check_production", "run_skill_script"}:
+                from app.skill_execution import SkillExecution
+
+                SkillExecution(self.database).publish(job, self.owner, result, elapsed_ms)
+            elif job["operation"] == "cleanup_storage":
                 from app.maintenance_service import MaintenanceService
 
                 MaintenanceService(self.database).publish(job, self.owner, result, elapsed_ms)

@@ -115,6 +115,8 @@ def public_job(job):
     value = copy.deepcopy(job)
     value.get("request", {}).pop("staging_path", None)
     value.get("artifact", {}).pop("relative_path", None)
+    for artifact in value.get("skill_result", {}).get("artifacts", []):
+        artifact.pop("relative_path", None)
     return value
 
 
@@ -166,7 +168,9 @@ class Queue:
             "adapter_version": request.get("adapter_version", "0.1.0"),
             "estimated_cost": {"status": "known", "amount": 0, "currency": "USD"},
             "actual_cost": {"status": "known", "amount": 0, "currency": "USD"},
-            "max_attempts": self.database.settings.max_job_attempts,
+            "max_attempts": 1
+            if operation == "run_skill_script"
+            else self.database.settings.max_job_attempts,
             "output_asset_ids": [],
             "error": None,
             "created_at": time.time(),
@@ -246,6 +250,8 @@ class Queue:
             "review_shot",
             "restore_project",
             "cleanup_storage",
+            "run_skill_script",
+            "check_production",
         }:
             return
         if job["operation"] == "export_project":
@@ -498,6 +504,16 @@ class Queue:
                 job = serialize(row)
                 if job["state"] == "cancel_requested":
                     self.set_state(connection, job, "cancelled")
+                elif job["operation"] == "run_skill_script" and job.get("script_started"):
+                    self.set_state(
+                        connection,
+                        job,
+                        "failed",
+                        error={
+                            "code": "SCRIPT_RUN_UNCERTAIN",
+                            "message": "A script launch lost its worker. Review and approve a new run",
+                        },
+                    )
                 elif job["attempt"] >= job["max_attempts"]:
                     self.set_state(
                         connection,
@@ -590,6 +606,10 @@ class Queue:
     def retry(self, project_id, job_id, body=None):
         with self.database.transaction() as connection:
             job = self.get(connection, project_id, job_id)
+            if job["operation"] == "run_skill_script":
+                raise DomainError(
+                    "SCRIPT_APPROVAL_REQUIRED", "Preview and approve a new script run", 409
+                )
             if job["state"] in {"queued", "claimed", "running", "retry_wait"}:
                 return job
             if job["state"] not in {"failed", "cancelled"}:

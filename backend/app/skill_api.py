@@ -3,14 +3,23 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from pydantic import ValidationError
 
 from app.errors import DomainError
 from app.project_engine import ProjectEngine
 from app.schemas import ChangeSet
 from app.skill_packages import SkillLibrary, invalid, public_package
-from app.skill_schema import MAX_UNPACKED, MAX_UPLOAD, GuidanceUpdate, SkillImport, Stage
+from app.skill_schema import (
+    MAX_UNPACKED,
+    MAX_UPLOAD,
+    GuidanceUpdate,
+    ProductionCheckRequest,
+    ScriptApproval,
+    ScriptPreviewRequest,
+    SkillImport,
+    Stage,
+)
 
 router = APIRouter()
 
@@ -112,3 +121,52 @@ def preview(project_id: UUID, body: GuidanceUpdate, request: Request):
 @router.post("/projects/{project_id}/skills/guidance/commit")
 def commit(project_id: UUID, body: GuidanceUpdate, request: Request):
     return configure(project_id, body, request, True)
+
+
+@router.post("/projects/{project_id}/skills/scripts/preview")
+def script_preview(project_id: UUID, body: ScriptPreviewRequest, request: Request):
+    from app.skill_execution import SkillExecution
+
+    return SkillExecution(request.app.state.database).preview(project_id, body)
+
+
+@router.post("/projects/{project_id}/skills/scripts/{plan_id}/execute", status_code=202)
+def script_execute(project_id: UUID, plan_id: UUID, body: ScriptApproval, request: Request):
+    from app.skill_execution import SkillExecution
+
+    return SkillExecution(request.app.state.database).approve(project_id, plan_id, body)
+
+
+@router.post("/projects/{project_id}/skills/checks", status_code=202)
+def check(project_id: UUID, body: ProductionCheckRequest, request: Request):
+    from app.skill_execution import SkillExecution
+
+    return SkillExecution(request.app.state.database).enqueue_check(project_id, body)
+
+
+@router.get("/projects/{project_id}/skills/runs")
+def runs(
+    project_id: UUID,
+    request: Request,
+    stage: Stage | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=50),
+):
+    from app.skill_execution import SkillExecution
+
+    return SkillExecution(request.app.state.database).list(project_id, stage, offset, limit)
+
+
+@router.get("/projects/{project_id}/skills/runs/{job_id}/files/{artifact_id}")
+def output(project_id: UUID, job_id: UUID, artifact_id: str, request: Request):
+    from app.skill_execution import SkillExecution
+
+    path, artifact = SkillExecution(request.app.state.database).artifact(
+        project_id, job_id, artifact_id
+    )
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        filename=artifact["name"].split("/")[-1],
+        headers={"X-Content-Type-Options": "nosniff"},
+    )

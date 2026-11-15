@@ -15,7 +15,7 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 from pydantic import ValidationError
-from sqlalchemy import func, insert, select
+from sqlalchemy import func, insert, select, update
 
 from app import db
 from app.errors import DomainError
@@ -181,8 +181,9 @@ def builtins():
     result = {}
     for directory in sorted((Path(__file__).parent / "builtin_skills").iterdir()):
         if directory.is_dir():
+            text = (directory / "SKILL.md").read_text(encoding="utf-8-sig")
             package = package_data(
-                {"SKILL.md": (directory / "SKILL.md").read_bytes()}, [directory.name], "AFDS", True
+                {"SKILL.md": text.replace("\r\n", "\n").encode()}, [directory.name], "AFDS", True
             )
             result[package["id"]] = package
     return result
@@ -249,10 +250,13 @@ class SkillLibrary:
 
     def import_files(self, files, stages, source=""):
         package = package_data(decode_files(files), stages, source)
+        if package["id"] in builtins():
+            return public_package(builtins()[package["id"]])
         with self.database.transaction() as connection:
-            if not connection.execute(
-                select(db.skill_packages.c.id).where(db.skill_packages.c.id == package["id"])
-            ).first():
+            prior = connection.execute(
+                select(db.skill_packages.c.payload).where(db.skill_packages.c.id == package["id"])
+            ).scalar_one_or_none()
+            if prior is None:
                 connection.execute(
                     insert(db.skill_packages).values(
                         id=package["id"],
@@ -261,6 +265,15 @@ class SkillLibrary:
                         payload=package,
                     )
                 )
+            else:
+                combined = list(dict.fromkeys([*prior["stages"], *stages]))
+                if combined != prior["stages"]:
+                    prior["stages"] = combined
+                    connection.execute(
+                        update(db.skill_packages)
+                        .where(db.skill_packages.c.id == package["id"])
+                        .values(summary=public_package(prior, False), payload=prior)
+                    )
         return public_package(self.get(package["id"]))
 
     def import_zip(self, content, stages, source=""):

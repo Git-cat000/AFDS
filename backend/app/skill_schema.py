@@ -1,8 +1,9 @@
 """Portable creative guidance and bounded local skill-package inputs."""
 
 from typing import Annotated, Literal
+from uuid import UUID
 
-from pydantic import Field, TypeAdapter, model_validator
+from pydantic import Field, StringConstraints, TypeAdapter, model_validator
 
 from app.schemas import RevisionRequest, Schema
 
@@ -109,3 +110,23 @@ class GuideSelection(Schema):
 
 class GuidanceUpdate(RevisionRequest):
     selections: dict[Stage, Annotated[list[GuideSelection], Field(max_length=3)]]
+
+
+class ProductionCheckRequest(RevisionRequest):
+    stage: Stage
+    shot_ids: list[UUID] = Field(default_factory=list, max_length=100)
+
+
+class ScriptPreviewRequest(ProductionCheckRequest):
+    package_id: Digest
+    script_path: str = Field(min_length=1, max_length=240)
+    arguments: list[
+        Annotated[
+            str, StringConstraints(strip_whitespace=False, max_length=2000, pattern=r"^[^\x00]*$")
+        ]
+    ] = Field(default_factory=list, max_length=50)
+    timeout_seconds: int = Field(default=60, ge=5, le=300)
+
+
+class ScriptApproval(RevisionRequest):
+    fingerprint: Digest
