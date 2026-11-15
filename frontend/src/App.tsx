@@ -102,6 +102,8 @@ export function App() {
   const [referenceAssignment, setReferenceAssignment] = useState<{
     assetId: string;
     shotId: string;
+    role?: "reference_image" | "start_image" | "end_image";
+    remove?: boolean;
   } | null>(null);
   const [timelineAudioId, setTimelineAudioId] = useState("");
   const [previewAsset, setPreviewAsset] = useState<string | null>(null);
@@ -598,6 +600,9 @@ export function App() {
                 selectedShotId={selectedShot?.id}
                 onSelectShot={setSelectedShotId}
                 openTool={setTab}
+                onUseImage={(assetId, shotId, role, remove) =>
+                  setReferenceAssignment({ assetId, shotId, role, remove })
+                }
                 canGenerate={
                   !(videoProvider.startsWith("openai-") && !remoteConsent)
                 }
@@ -939,7 +944,7 @@ export function App() {
       )}
       {referenceAssignment && apr && (
         <Modal
-          title="将图像用于镜头"
+          title={referenceAssignment.remove ? "移除镜头输入" : "将图像用于镜头"}
           close={() => setReferenceAssignment(null)}
         >
           <ReferenceAssignment
@@ -947,6 +952,8 @@ export function App() {
             project={apr}
             assetId={referenceAssignment.assetId}
             shotId={referenceAssignment.shotId}
+            initialRole={referenceAssignment.role}
+            remove={referenceAssignment.remove}
             busy={busy}
             run={run}
             complete={() => {

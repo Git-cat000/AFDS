@@ -88,7 +88,10 @@ test("arranges a canvas, compares candidates and records source-bound feedback a
   await page.goto("/");
   await page.getByRole("button").filter({ hasText: title }).click();
   const handle = page.getByRole("button", { name: "移动 DEMO canvas shot" });
-  const before = await page.getByTestId("shot-card").getAttribute("style");
+  const positionedNode = page
+    .locator(".react-flow__node")
+    .filter({ has: page.getByTestId("shot-card") });
+  const before = await positionedNode.getAttribute("style");
   const box = (await handle.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
@@ -98,10 +101,7 @@ test("arranges a canvas, compares candidates and records source-bound feedback a
     { steps: 5 },
   );
   await page.mouse.up();
-  await expect(page.getByTestId("shot-card")).not.toHaveAttribute(
-    "style",
-    before!,
-  );
+  await expect(positionedNode).not.toHaveAttribute("style", before!);
   await page.getByRole("button", { name: "缩小画布" }).click();
   await expect(page.getByText("90%", { exact: true })).toBeVisible();
   await page.reload();

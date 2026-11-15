@@ -109,11 +109,18 @@ function setup() {
   };
 }
 
-it("persists keyboard arrangement and zoom and restores the canvas after reopening", () => {
+it("persists keyboard arrangement and zoom and restores the canvas after reopening", async () => {
   const { renderView } = setup();
-  fireEvent.keyDown(screen.getByRole("button", { name: "移动 DEMO shot" }), {
-    key: "ArrowRight",
-  });
+  fireEvent.keyDown(
+    await screen.findByRole(
+      "button",
+      { name: "移动 DEMO shot" },
+      { timeout: 5000 },
+    ),
+    {
+      key: "ArrowRight",
+    },
+  );
   fireEvent.click(screen.getByRole("button", { name: "缩小画布" }));
   expect(screen.getByText("90%")).toBeTruthy();
   expect(
@@ -199,6 +206,50 @@ it("updates untouched reference controls when the APR source changes", () => {
   expect(
     (screen.getByLabelText("start_image") as HTMLSelectElement).value,
   ).toBe("image");
+});
+
+it("adds a material and note, connects their ports, and restores a deleted line with undo", async () => {
+  setup();
+  await screen.findByRole("button", { name: "移动 DEMO shot" });
+  fireEvent.click(screen.getByRole("button", { name: "素材抽屉" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "放入画布 DEMO reference" }),
+  );
+  await screen.findByRole("button", { name: "从 DEMO reference 连线" });
+  fireEvent.click(screen.getByRole("button", { name: "添加文字" }));
+  fireEvent.change(
+    await screen.findByPlaceholderText("写下想法、提示词或制作说明"),
+    { target: { value: "DEMO canvas note" } },
+  );
+  fireEvent.keyDown(
+    screen.getByRole("button", { name: "从 DEMO reference 连线" }),
+    { key: "Enter" },
+  );
+  fireEvent.keyDown(screen.getByRole("button", { name: "连接到 DEMO shot" }), {
+    key: "Enter",
+  });
+  await waitFor(() =>
+    expect(
+      JSON.parse(localStorage.getItem("afds-canvas-demo")!).edges,
+    ).toHaveLength(1),
+  );
+  const line = await screen.findByLabelText(
+    "DEMO reference → DEMO shot · 关联",
+  );
+  fireEvent.click(line);
+  fireEvent.click(screen.getByRole("button", { name: "删除连线" }));
+  expect(
+    JSON.parse(localStorage.getItem("afds-canvas-demo")!).edges,
+  ).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "撤销画布操作" }));
+  expect(
+    JSON.parse(localStorage.getItem("afds-canvas-demo")!).edges,
+  ).toHaveLength(1);
+  expect(
+    JSON.parse(localStorage.getItem("afds-canvas-demo")!).nodes.find(
+      (node: { kind: string }) => node.kind === "note",
+    ).text,
+  ).toBe("DEMO canvas note");
 });
 it("keeps a dirty reference draft tied to its source revision until explicitly refreshed", () => {
   const { project, refresh } = setup();

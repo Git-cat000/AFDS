@@ -8,6 +8,7 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    setupFiles: ["./tests/flow-setup.ts"],
     include: ["tests/**/*.test.tsx", "tests/**/*.test.ts"],
   },
 });

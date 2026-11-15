@@ -1,0 +1,219 @@
+.material-board .shot-canvas {
+  isolation: isolate;
+}
+.material-board .shot-canvas.canvas {
+  background-image: none;
+  cursor: auto;
+}
+.material-board .material-node {
+  position: relative;
+  width: 270px;
+  overflow: visible;
+  margin: 0;
+}
+.material-board .material-node .node-handle {
+  display: flex;
+  align-items: center;
+  border-radius: 9px 9px 0 0;
+  user-select: none;
+}
+.material-node .node-poster {
+  overflow: hidden;
+}
+.material-node .react-flow__handle {
+  z-index: 2;
+  width: 13px;
+  height: 13px;
+  background: #bdb2ff;
+  border: 2px solid #29262e;
+  top: 74px;
+}
+.material-node .react-flow__handle:focus-visible {
+  outline: 3px solid #eee6ff;
+}
+.material-node .react-flow__handle[aria-pressed="true"] {
+  background: #f5ce80;
+}
+.asset-node-body {
+  padding: 12px;
+}
+.asset-node-body > img,
+.asset-node-body video {
+  width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  display: block;
+  border-radius: 6px;
+  background: #101013;
+}
+.asset-node-body audio {
+  width: 100%;
+  height: 38px;
+  margin: 12px 0;
+}
+.asset-node-body > strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.asset-node-body > small {
+  display: block;
+  margin-top: 6px;
+}
+.note-node {
+  background: #343024;
+  border-color: #7c704e;
+}
+.note-node .node-handle {
+  background: #423b2a;
+  color: #ead9a8;
+}
+.note-content {
+  width: 100%;
+  min-height: 150px;
+  resize: vertical;
+  background: transparent;
+  border: 0;
+  padding: 14px;
+  color: #eee3c4;
+  line-height: 1.6;
+  font-size: 13px;
+}
+.board-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.board-tools button {
+  padding: 7px 9px;
+  font-size: 11px;
+}
+.material-tray {
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #202024;
+}
+.material-tray > div:first-child {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.material-tray input {
+  min-width: 0;
+  flex: 1;
+}
+.material-tray button {
+  font-size: 11px;
+  padding: 6px 10px;
+}
+.material-tray-items {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-top: 12px;
+}
+.material-tray-items > div {
+  min-width: 150px;
+  max-width: 180px;
+  border: 1px solid #49464f;
+  border-radius: 7px;
+  padding: 10px;
+  cursor: grab;
+  background: #29272e;
+}
+.material-tray-items strong {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+.canvas-edge-editor {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid #686074;
+  border-radius: 8px;
+  margin-top: 10px;
+  background: #26222e;
+  font-size: 12px;
+}
+.canvas-edge-editor > strong {
+  width: 100%;
+}
+.canvas-edge-editor label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+.canvas-edge-editor input {
+  width: 180px;
+}
+.canvas-edge-editor button {
+  font-size: 11px;
+  padding: 7px 10px;
+}
+.canvas-notice {
+  font-size: 12px;
+  color: #e6cd99;
+}
+.material-board .react-flow {
+  --xy-edge-stroke-default: #aaa1c1;
+  --xy-edge-stroke-selected-default: #e7d8ff;
+  --xy-edge-stroke-width-default: 2;
+  --xy-node-boxshadow-selected-default: none;
+  --xy-background-color-default: #151517;
+  --xy-edge-label-color-default: #e4dcf0;
+  --xy-edge-label-background-color-default: #292530;
+}
+.material-board .effective-input-edge .react-flow__edge-path {
+  stroke: #92c6b0;
+  stroke-width: 2.5;
+}
+.material-board .react-flow__node.selected {
+  outline: 0;
+}
+.material-board .react-flow__node {
+  border-radius: 10px;
+}
+.material-board .react-flow__node:focus-visible {
+  outline: 2px solid #e1d6ff;
+}
+.material-board .react-flow__minimap {
+  width: 120px;
+  height: 80px;
+  border: 1px solid #45404e;
+  background: #201d25;
+}
+.material-board .react-flow__attribution {
+  font-size: 8px;
+  background: #25222b;
+  color: #a29cae;
+}
+.material-board .board-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 18px;
+}
+.material-board .board-grid .material-node {
+  width: 100%;
+}
+.material-board .canvas-empty {
+  position: absolute;
+  inset: 25% 0 auto;
+  pointer-events: none;
+}
+@media (max-width: 600px) {
+  .material-board .react-flow__minimap {
+    display: none;
+  }
+  .material-tray > div:first-child {
+    flex-wrap: wrap;
+  }
+}

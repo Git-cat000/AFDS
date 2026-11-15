@@ -13,7 +13,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-function setup() {
+function setup(remove = false) {
   const project = {
     project_id: "project",
     revision: 7,
@@ -21,7 +21,9 @@ function setup() {
       {
         id: "shot",
         title: "DEMO target",
-        reference_images: { start_image: "start" },
+        reference_images: remove
+          ? { start_image: "image", end_image: "other" }
+          : { start_image: "start" },
       },
     ],
     assets: [
@@ -55,6 +57,8 @@ function setup() {
       }}
       busy={false}
       complete={complete}
+      initialRole={remove ? "start_image" : undefined}
+      remove={remove}
     />
   );
   const view = render(tree(project));
@@ -87,6 +91,37 @@ it("reuses an image as a shot input only after preview and explicit approval whi
     base_revision: 7,
     approved: true,
   });
+});
+
+it("previews removal of one effective input and blocks removing a newer replacement", async () => {
+  const { project, fetcher, refresh } = setup(true);
+  fireEvent.click(screen.getByRole("button", { name: "预览移除图像关联" }));
+  await screen.findByRole("button", { name: "批准移除镜头输入" });
+  const preview = JSON.parse(
+    String((fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body),
+  );
+  expect(preview.operations[0].value).toEqual({ end_image: "other" });
+  refresh({
+    ...project,
+    revision: 8,
+    shots: [
+      {
+        ...project.shots[0],
+        reference_images: { start_image: "other", end_image: "other" },
+      },
+    ],
+  });
+  fireEvent.click(screen.getByRole("button", { name: "载入最新镜头设置" }));
+  expect(
+    screen.getByText("该镜头当前已使用其它图像，请重新选择连线。"),
+  ).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "预览移除图像关联",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
 });
 it("blocks a stale assignment and explicitly reloads the latest reference map", async () => {
   const { project, refresh, fetcher } = setup();

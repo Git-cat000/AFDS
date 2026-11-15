@@ -9,6 +9,8 @@ export function ReferenceAssignment({
   busy,
   run,
   complete,
+  initialRole = "reference_image",
+  remove = false,
 }: {
   project: Project;
   assetId: string;
@@ -16,6 +18,8 @@ export function ReferenceAssignment({
   busy: boolean;
   run: (action: () => Promise<unknown>) => Promise<void>;
   complete: () => void;
+  initialRole?: "reference_image" | "start_image" | "end_image";
+  remove?: boolean;
 }) {
   const shot = project.shots.find((item) => item.id === shotId);
   const asset = project.assets.find(
@@ -26,12 +30,13 @@ export function ReferenceAssignment({
     references: shot?.reference_images || {},
   });
   const [role, setRole] =
-    useState<keyof NonNullable<Shot["reference_images"]>>("reference_image");
+    useState<keyof NonNullable<Shot["reference_images"]>>(initialRole);
   const [proposal, setProposal] = useState<{
     body: ChangeSet;
     preview: Preview;
   }>();
   const stale = source.revision !== project.revision;
+  const differentInput = remove && source.references[role] !== assetId;
   const root = `/projects/${project.project_id}`;
   if (!shot || !asset)
     return <p role="alert">当前图像或镜头已不可用，请重新选择。</p>;
@@ -48,7 +53,7 @@ export function ReferenceAssignment({
         图像用途
         <select
           aria-label="图像用途"
-          disabled={busy}
+          disabled={busy || remove}
           value={role}
           onChange={(e) => {
             setRole(e.target.value as typeof role);
@@ -61,6 +66,9 @@ export function ReferenceAssignment({
         </select>
       </label>
       {stale && <p role="alert">镜头已有新版本，请载入最新设置后重新预览。</p>}
+      {differentInput && (
+        <p role="alert">该镜头当前已使用其它图像，请重新选择连线。</p>
+      )}
       {stale && (
         <button
           disabled={busy}
@@ -86,7 +94,7 @@ export function ReferenceAssignment({
           </pre>
           <p className="muted">生成时使用工作流中对应的图像输入映射。</p>
           <button
-            disabled={busy || stale}
+            disabled={busy || stale || differentInput}
             className="primary"
             onClick={() =>
               void run(async () => {
@@ -95,15 +103,18 @@ export function ReferenceAssignment({
               })
             }
           >
-            批准关联到镜头
+            {remove ? "批准移除镜头输入" : "批准关联到镜头"}
           </button>
           <button onClick={() => setProposal(undefined)}>返回设置用途</button>
         </>
       ) : (
         <button
-          disabled={busy || stale}
+          disabled={busy || stale || differentInput}
           onClick={() =>
             void run(async () => {
+              const references = { ...source.references };
+              if (remove) delete references[role];
+              else references[role] = asset.id;
               const body: ChangeSet = {
                 base_revision: source.revision,
                 approved: true,
@@ -114,7 +125,7 @@ export function ReferenceAssignment({
                     entity_type: "shot",
                     entity_id: shot.id,
                     field: "reference_images",
-                    value: { ...source.references, [role]: asset.id },
+                    value: references,
                   },
                 ],
               };
@@ -126,7 +137,7 @@ export function ReferenceAssignment({
             })
           }
         >
-          预览图像关联
+          {remove ? "预览移除图像关联" : "预览图像关联"}
         </button>
       )}
     </section>
