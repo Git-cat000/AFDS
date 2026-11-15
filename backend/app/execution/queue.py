@@ -11,6 +11,7 @@ from app.adapters import check_provider
 from app.errors import DomainError
 from app.project_engine import ProjectEngine, emit, find
 from app.schemas import Format, new_id
+from app.skill_schema import add_guidance
 from app.storage import contained, file_hash
 
 ACTIVE = {"claimed", "running", "verifying", "cancel_requested"}
@@ -70,7 +71,7 @@ def shot_request(apr, shot, provider_config=None):
             role: {"asset_id": identifier, "sha256": find(apr["assets"], identifier)["sha256"]}
             for role, identifier in shot["reference_images"].items()
         }
-    return request
+    return add_guidance(request, apr, ["video", "shots", "continuity"])
 
 
 def render_request(apr):
@@ -356,6 +357,11 @@ class Queue:
                 "adapter_version": "0.2.0",
                 "request_id": str(body.request_id) if body.request_id else None,
             }
+            add_guidance(request, apr, ["image"] if kind == "image" else ["audio"])
+            if kind == "speech" and request.get("production_guidance"):
+                from app.remote_media import speech_instructions
+
+                speech_instructions(request, config["model"])
             job = self.enqueue(connection, apr, body.operation, request)
             self.engine.approve(
                 connection,

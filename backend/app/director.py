@@ -35,7 +35,7 @@ class MockDirector:
             for index, (title, size, action) in enumerate(beats)
         ]
         scene["shot_ids"] = [s["id"] for s in shots]
-        return {
+        plan = {
             "id": new_id(),
             "provider_id": "mock-director",
             "state": "proposed",
@@ -46,6 +46,9 @@ class MockDirector:
             "estimated_cost": {"status": "known", "amount": 0, "currency": "USD"},
             "explanation": "DEMO/MOCK · 规则式四镜头建议，请审阅后执行。",
         }
+        from app.skill_schema import add_guidance
+
+        return add_guidance(plan, apr, ["story", "shots", "continuity"])
 
 
 def propose(engine, project_id, body):

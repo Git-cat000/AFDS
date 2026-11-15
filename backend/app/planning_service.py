@@ -18,6 +18,7 @@ from app.media import Cancelled
 from app.project_engine import ProjectEngine, emit, find
 from app.provider_settings import ProviderStore
 from app.schemas import DirectorRequest, new_id
+from app.skill_schema import add_guidance
 
 
 class StoryPlanningRequest(DirectorRequest):
@@ -98,6 +99,11 @@ class PlanningService:
             }
             if snapshot:
                 request["provider_config"] = snapshot
+            add_guidance(
+                request,
+                apr,
+                ["shots", "continuity"] if kind == "semantic" else ["story", "shots", "continuity"],
+            )
             job = self.queue.enqueue(connection, apr, f"plan_{kind}", request, idempotency_key=key)
             if snapshot:
                 self.engine.approve(
@@ -204,6 +210,8 @@ class PlanningService:
                     "explanation": "请审阅修改差异后批准应用。",
                 }
             plan["planning_job_id"] = job["id"]
+            if request.get("production_guidance"):
+                plan["production_guidance"] = request["production_guidance"]
             return plan
         except DomainError as error:
             if config and getattr(error, "rejected", False):

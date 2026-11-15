@@ -45,11 +45,46 @@ def prompt_for_shot(request):
     return json.dumps(
         {
             key: request[key]
-            for key in ("action", "emotion", "camera", "style_bible", "continuity")
+            for key in (
+                "action",
+                "emotion",
+                "camera",
+                "style_bible",
+                "continuity",
+                "production_guidance",
+            )
             if key in request
         },
         ensure_ascii=False,
     )
+
+
+def media_prompt(request):
+    if "prompt" not in request:
+        return prompt_for_shot(request)
+    if not request.get("production_guidance"):
+        return request["prompt"]
+    return json.dumps(
+        {"request": request["prompt"], "production_guidance": request["production_guidance"]},
+        ensure_ascii=False,
+    )
+
+
+def speech_instructions(request, model):
+    from app.errors import DomainError
+
+    if model in {"tts-1", "tts-1-hd"}:
+        raise DomainError(
+            "CAPABILITY_UNSUPPORTED",
+            "This speech model cannot apply separate performance instructions",
+            422,
+        )
+    text = json.dumps(request["production_guidance"], ensure_ascii=False)
+    if len(text) > 4096:
+        raise DomainError(
+            "SKILL_CONTEXT_LIMIT", "Speech instructions support up to4096characters", 422
+        )
+    return text
 
 
 def execute_remote_media(queue, job, owner, work, checkpoint):
@@ -249,7 +284,7 @@ def generate_image(transport, config, request, work, checkpoint, accepted=lambda
         "images/generations",
         payload={
             "model": config["model"],
-            "prompt": request["prompt"],
+            "prompt": media_prompt(request),
             "n": 1,
             "size": config["image_size"],
         },
@@ -298,15 +333,18 @@ def generate_image(transport, config, request, work, checkpoint, accepted=lambda
 
 def generate_speech(transport, config, request, work, checkpoint, settings):
     source = work / "speech-source.bin"
+    payload = {
+        "model": config["model"],
+        "input": request["prompt"],
+        "voice": config["speech_voice"],
+        "response_format": "mp3",
+    }
+    if request.get("production_guidance"):
+        payload["instructions"] = speech_instructions(request, config["model"])
     transport.request(
         "POST",
         "audio/speech",
-        payload={
-            "model": config["model"],
-            "input": request["prompt"],
-            "voice": config["speech_voice"],
-            "response_format": "mp3",
-        },
+        payload=payload,
         output=source,
         checkpoint=checkpoint,
         limit=32 * 1024 * 1024,

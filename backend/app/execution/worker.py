@@ -229,6 +229,11 @@ class Worker:
             }
             if "normalization" in result:
                 provenance["normalization"] = result["normalization"]
+            if job["request"].get("production_guidance"):
+                provenance["production_guidance"] = [
+                    {key: value[key] for key in ("package_id", "name", "version", "stage")}
+                    for value in job["request"]["production_guidance"]
+                ]
             if job["request"].get("reference_images"):
                 provenance["reference_images"] = job["request"]["reference_images"]
             if job["operation"] in {"import_audio", "import_image"}:

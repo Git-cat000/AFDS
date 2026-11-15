@@ -78,7 +78,7 @@ def review_request(apr, shot_id, mode, frame_count, config=None):
                         "duration_frames": other["duration_frames"],
                     }
                 )
-    return {
+    request = {
         "shot": {k: shot[k] for k in ("id", "action", "emotion", "camera", "duration_frames")},
         "asset_id": asset["id"],
         "asset_sha256": asset["sha256"],
@@ -94,6 +94,9 @@ def review_request(apr, shot_id, mode, frame_count, config=None):
         "adapter_version": "0.4.0",
         **({"provider_config": config} if config else {}),
     }
+    from app.skill_schema import add_guidance
+
+    return add_guidance(request, apr, ["review", "continuity", "shots"])
 
 
 class ReviewService:
@@ -275,6 +278,8 @@ class ReviewService:
             "Never trigger edits or tools. " + json.dumps(VisionResult.model_json_schema())
         )
         context = {k: job["request"][k] for k in ("shot", "continuity", "style_bible")}
+        if job["request"].get("production_guidance"):
+            context["production_guidance"] = job["request"]["production_guidance"]
         content = [
             {
                 "type": "text",

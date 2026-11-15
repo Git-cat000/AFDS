@@ -52,12 +52,12 @@ def validate_workflow(config):
 
 
 def build_prompt(config, request, reference_names=None):
-    from app.remote_media import prompt_for_shot
+    from app.remote_media import media_prompt
 
     template = WorkflowTemplate.model_validate(config["workflow"])
     graph = copy.deepcopy(template.graph)
     values = {
-        "prompt": request.get("prompt") or prompt_for_shot(request),
+        "prompt": media_prompt(request),
         "seed": template.seed,
         "width": request["format"]["width"],
         "height": request["format"]["height"],

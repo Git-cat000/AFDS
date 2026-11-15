@@ -5,6 +5,7 @@ from pydantic import Field, ValidationError
 from app.errors import DomainError
 from app.provider_http import ProviderHTTP, reject_credential_output
 from app.schemas import Camera, Scene, Schema, Shot, new_id
+from app.skill_schema import add_guidance
 
 
 class ProposedShot(Schema):
@@ -42,6 +43,7 @@ def propose_story(config, apr, message, checkpoint=lambda: True):
         "locations": apr.get("locations", [])[:40],
         "world_states": apr.get("world_states", [])[-20:],
     }
+    add_guidance(context, apr, ["story", "shots", "continuity"])
     payload = {
         "model": config["model"],
         "messages": [
@@ -81,7 +83,7 @@ def propose_story(config, apr, message, checkpoint=lambda: True):
         if isinstance(usage, dict)
         else {}
     )
-    return {
+    plan = {
         "id": new_id(),
         "provider_id": "openai-llm",
         "model_id": config["model"],
@@ -95,3 +97,4 @@ def propose_story(config, apr, message, checkpoint=lambda: True):
         "usage": usage,
         "explanation": "由配置的 LLM 生成，请审阅后执行。",
     }
+    return add_guidance(plan, apr, ["story", "shots", "continuity"])

@@ -93,6 +93,13 @@ def compile_guidance(apr, stages):
     return result
 
 
+def add_guidance(request, apr, stages):
+    guides = compile_guidance(apr, stages)
+    if guides:
+        request["production_guidance"] = guides
+    return request
+
+
 class GuideSelection(Schema):
     package_id: Digest
     resources: list[Annotated[str, Field(max_length=240)]] = Field(
