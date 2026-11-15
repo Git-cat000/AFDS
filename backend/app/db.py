@@ -185,6 +185,16 @@ creative_feedback = Table(
 )
 
 
+skill_packages = Table(
+    "skill_packages",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("created_at", Float, nullable=False),
+    Column("summary", JSON, nullable=False),
+    Column("payload", JSON, nullable=False),
+)
+
+
 class Database:
     def __init__(self, settings: Settings):
         self.settings = settings

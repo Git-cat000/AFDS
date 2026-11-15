@@ -277,7 +277,7 @@ class ProjectEngine:
             else:
                 if str(operation.entity_id) != apr["project_id"]:
                     raise DomainError("NOT_FOUND", "Project mismatch", 404)
-                target, allowed = apr, {"title", "brief", "style_bible"}
+                target, allowed = apr, {"title", "brief", "style_bible", "production_guidance"}
             if field not in allowed:
                 raise DomainError("FIELD_FORBIDDEN", "Field cannot be changed", 422)
             container = target

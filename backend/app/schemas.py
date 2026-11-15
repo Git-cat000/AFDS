@@ -137,7 +137,7 @@ class BudgetPolicy(Schema):
 
 
 class APR(ProjectCreate):
-    apr_schema_version: Literal["0.1.0", "0.2.0", "0.3.0"] = "0.3.0"
+    apr_schema_version: Literal["0.1.0", "0.2.0", "0.3.0", "0.4.0"] = "0.4.0"
     project_id: UUID = Field(default_factory=uuid4)
     revision: int = Field(default=1, ge=1)
     status: Literal["draft", "ready", "archived"] = "draft"
@@ -145,6 +145,7 @@ class APR(ProjectCreate):
     locations: list[dict[str, Any]] = Field(default_factory=list)
     world_states: list[dict[str, Any]] = Field(default_factory=list)
     continuity_links: list[dict[str, Any]] = Field(default_factory=list)
+    production_guidance: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
     scenes: list[Scene] = Field(default_factory=list)
     shots: list[Shot] = Field(default_factory=list)
     timeline: Timeline = Field(default_factory=Timeline)
@@ -160,6 +161,16 @@ class APR(ProjectCreate):
             "currency": "USD",
         }
     )
+
+    @field_validator("production_guidance")
+    @classmethod
+    def validate_production_guidance(cls, value):
+        from app.skill_schema import validate_guidance
+
+        return {
+            stage: [item.model_dump(mode="json") for item in items]
+            for stage, items in validate_guidance(value).items()
+        }
 
     @field_validator("assets")
     @classmethod
@@ -243,7 +254,7 @@ class APR(ProjectCreate):
 
         validate_timeline(self.model_dump(mode="json"))
         validate_continuity(self.model_dump(mode="json"))
-        self.apr_schema_version = "0.3.0"
+        self.apr_schema_version = "0.4.0"
         return self
 
 

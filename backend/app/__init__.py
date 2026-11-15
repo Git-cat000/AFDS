@@ -1,4 +1,4 @@
 """AFDS local film direction system."""
 
-APP_VERSION = "0.6.1"
-APR_SCHEMA_VERSION = "0.3.0"
+APP_VERSION = "0.7.0"
+APR_SCHEMA_VERSION = "0.4.0"

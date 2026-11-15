@@ -86,6 +86,9 @@ def create_app(settings: Settings | None = None):
     def version():
         return {"version": APP_VERSION, "apr_schema_version": APR_SCHEMA_VERSION}
 
+    from app.skill_api import router as skill_router
+
+    application.include_router(skill_router, prefix="/api/v1")
     from app.history_api import router as history_router
 
     application.include_router(history_router, prefix="/api/v1")

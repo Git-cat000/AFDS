@@ -344,7 +344,7 @@ export function App() {
         </button>
         <div className="rail-bottom">
           <span className="online-dot" />
-          本地工作区<small>v0.6.1 · FILM STUDIO</small>
+          本地工作区<small>v0.7.0 · FILM STUDIO</small>
         </div>
       </aside>
       <main className="workspace">
