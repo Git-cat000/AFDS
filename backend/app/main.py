@@ -86,6 +86,9 @@ def create_app(settings: Settings | None = None):
     def version():
         return {"version": APP_VERSION, "apr_schema_version": APR_SCHEMA_VERSION}
 
+    from app.workspace_api import router as workspace_router
+
+    application.include_router(workspace_router, prefix="/api/v1")
     from app.skill_api import router as skill_router
 
     application.include_router(skill_router, prefix="/api/v1")

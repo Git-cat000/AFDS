@@ -656,7 +656,15 @@ function CanvasSurface({
           {state.storageError || notice}
         </p>
       )}
+      {state.syncError && (
+        <div className="canvas-notice" role="status">
+          <p>{state.syncError}</p>
+          <button onClick={() => void state.loadServer()}>载入服务器版本</button>
+          <button onClick={() => void state.retrySync()}>重新保存当前草稿</button>
+        </div>
+      )}
       <div className="canvas-toolbar">
+        <small aria-live="polite">{state.syncStatus}</small>
         <small>拖动标题移动 · Shift 框选 · 从端口连线</small>
         <button aria-label="缩小画布" onClick={() => zoom(-0.1)}>
           <Minus size={15} />

@@ -195,6 +195,17 @@ skill_packages = Table(
 )
 
 
+workspaces = Table(
+    "project_workspaces",
+    metadata,
+    Column("project_id", ForeignKey("projects.id"), primary_key=True),
+    Column("revision", Integer, nullable=False),
+    Column("payload", JSON, nullable=False),
+    Column("author", String, nullable=False),
+    Column("updated_at", Float, nullable=False),
+)
+
+
 class Database:
     def __init__(self, settings: Settings):
         self.settings = settings

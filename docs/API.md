@@ -304,3 +304,9 @@ Scripts execute with the current local user's filesystem and network permissions
 Script timeout is5–300seconds. Source review supports scripts up to256KiB. Context is bounded512KiB with explicit scope truncation metadata. Logs retain64KiB per stream and terminate at1MiB per stream. Output artifacts allow32files,8MiB per file and32MiB total. Runtime errors retain bounded diagnostics. Recognized credential patterns are redacted from logs and rejected in imported resources, saved arguments and artifact files. Cancellation and crash recovery retain ownership checks. A launch lost with its Worker reports SCRIPT_RUN_UNCERTAIN, and normal job retry reports SCRIPT_APPROVAL_REQUIRED for external scripts.
 
 Import limits are16MiB ZIP,32MiB unpacked,256members and8MiB per resource. YAML uses safe loading. Directory metadata is checked before ZIP allocation, and paths, links, reserved names, collisions and credential directories are validated. The runtime library lives in local data, while authored builtins are packaged source resources. See [the production skill guide](SKILLS.md) for the portable package format and script contract.
+
+## Project workspace
+
+`GET /projects/{project_id}/workspace` returns project_id, workspace_revision, initialized and document. The document stores board v2 positions, asset/note nodes, ordinary edges and hiddenShots. Viewport preferences are browser-scoped.
+
+`PUT /projects/{project_id}/workspace` accepts base_workspace_revision and document. Engine transactions check owned references and atomically advance the workspace revision. WORKSPACE_CONFLICT returns409. Canvas saves preserve the film APR revision and media dependencies. A new workspace starts at revision0 with initialized=false. The browser migrates a legacy board only into that empty workspace and preserves unsynchronized drafts across connection failures.
