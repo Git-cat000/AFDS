@@ -45,12 +45,12 @@
 - `ProjectEngine.mutate_workspace(project_id, base_workspace_revision, operation, author)` 管理画布事务，修改共享布局递增画布修订。
 - `GET /projects/{id}/workspace` 与 `PUT /projects/{id}/workspace`，初始修订为 0。
 
-- [ ] 在 `test_workspace.py` 添加失败测试 `test_concurrent_workspace_save_conflicts`、`test_workspace_save_keeps_apr_revision` 和 `test_workspace_rejects_invalid_references`。相同画布版本的两次竞争保存仅一次成功，另一请求返回 409。布局保存后 APR 的 `revision`、素材状态和有效审批保持可读取。非法素材引用、非有限坐标、悬空边及超限节点返回 422。
-- [ ] 执行 `.venv/Scripts/python.exe -m pytest backend/tests/test_workspace.py -q --basetemp data/workspace-red`，记录缺失入口或行为的失败。
-- [ ] 实现 0008 迁移、上述 Schema 和 Engine 服务。工程删除归档时按现有项目可见性处理工作台读取。将服务器空画布与已有布局区分，采用修订 0 的条件保存完成单次本机布局迁移。
-- [ ] 接通 `useCanvasBoard`，拖动结束提交一次，键盘移动及时保存。视口按用户/工程保存在浏览器偏好中。服务器有内容时展示服务器布局，409 时保留草稿并提供刷新及重试，网络中断时显示未同步状态。
-- [ ] 执行定向 pytest、`npm --prefix frontend test -- workspace-sync` 和双浏览器持久化流程。断言服务器重启后共享布局存在，本地旧布局再次装载具有幂等结果。
-- [ ] 精确提交 S1 对应源文件、迁移、测试与接口说明。
+- [x] 在 `test_workspace.py` 添加失败测试 `test_concurrent_workspace_save_conflicts`、`test_workspace_save_keeps_apr_revision` 和 `test_workspace_rejects_invalid_references`。相同画布版本的两次竞争保存仅一次成功，另一请求返回 409。布局保存后 APR 的 `revision`、素材状态和有效审批保持可读取。非法素材引用、非有限坐标、悬空边及超限节点返回 422。
+- [x] 执行 `.venv/Scripts/python.exe -m pytest backend/tests/test_workspace.py -q --basetemp data/workspace-red`，记录缺失入口或行为的失败。
+- [x] 实现 0008 迁移、上述 Schema 和 Engine 服务。工程删除归档时按现有项目可见性处理工作台读取。将服务器空画布与已有布局区分，采用修订 0 的条件保存完成单次本机布局迁移。
+- [x] 接通 `useCanvasBoard`，拖动结束提交一次，键盘移动及时保存。视口按用户/工程保存在浏览器偏好中。服务器有内容时展示服务器布局，409 时保留草稿并提供刷新及重试，网络中断时显示未同步状态。
+- [x] 执行定向 pytest、`npm --prefix frontend test -- workspace-sync` 和双浏览器持久化流程。断言服务器重启后共享布局存在，本地旧布局再次装载具有幂等结果。
+- [x] 精确提交 S1 对应源文件、迁移、测试与接口说明。
 
 ## S2 画布工程包与恢复
 
@@ -60,11 +60,11 @@
 - `remap_workspace(document, entity_ids) -> WorkspaceDocument` 位于 `workspace_service.py`，`entity_ids` 使用恢复服务的旧 ID 到新 ID 映射。
 - 导出快照携带 APR 修订和画布修订，二者从同一数据库快照读取。SQLite 使用显式读事务，PostgreSQL 在首次读取前设置该事务为 `REPEATABLE READ`。
 
-- [ ] 在 `test_workspace_exchange.py` 添加失败测试 `test_workspace_restore_remaps_references`、`test_workspace_manifest_tamper_rejected` 和 `test_export_reads_one_database_snapshot`。含镜头、素材副本、便签和普通连线的工程包恢复后，实体映射完整，素材哈希相同。篡改 `workspace.json`、引用包外素材、画布超限均失败。0.2 包恢复为空画布。
-- [ ] 执行定向测试并记录失败，确认现有恢复保护未被测试夹具绕过。
-- [ ] 扩展 `exchange.py`、恢复 Schema 和服务。快照提取、成员数量、累计解压大小、路径及摘要检查沿用现有工程包校验。恢复为新项目时调用 `remap_workspace()` 并通过 Engine 保存。
-- [ ] 在 `workspace-portable.spec.ts` 使用两个独立浏览器上下文导出、恢复并检查便签内容、连线端点和物料位置。增加导出期间并发编辑测试，导出的快照在两个聚合上各自一致。
-- [ ] 执行定向测试、原有 `test_restore.py`、`test_exchange.py` 与浏览器恢复流程，更新使用说明后精确提交。
+- [x] 在 `test_workspace_exchange.py` 添加失败测试 `test_workspace_restore_remaps_references`、`test_workspace_manifest_tamper_rejected` 和 `test_export_reads_one_database_snapshot`。含镜头、素材副本、便签和普通连线的工程包恢复后，实体映射完整，素材哈希相同。篡改 `workspace.json`、引用包外素材、画布超限均失败。0.2 包恢复为空画布。
+- [x] 执行定向测试并记录失败，确认现有恢复保护未被测试夹具绕过。
+- [x] 扩展 `exchange.py`、恢复 Schema 和服务。快照提取、成员数量、累计解压大小、路径及摘要检查沿用现有工程包校验。恢复为新项目时调用 `remap_workspace()` 并通过 Engine 保存。
+- [x] 在 `workspace-portable.spec.ts` 使用两个独立浏览器上下文导出、恢复并检查便签内容、连线端点和物料位置。增加导出期间并发编辑测试，导出的快照在两个聚合上各自一致。
+- [x] 执行定向测试、原有 `test_restore.py`、`test_exchange.py` 与浏览器恢复流程，更新使用说明后精确提交。
 
 ## S3 容器执行协议与资源隔离
 

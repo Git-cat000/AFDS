@@ -226,42 +226,48 @@ class ProjectEngine:
             return self.save(connection, after, before, reason, author)
 
     def mutate_workspace(self, project_id, base_workspace_revision, operation, author="local"):
+        with self.database.transaction() as connection:
+            apr = self.load(connection, project_id)
+            return self.save_workspace(
+                connection,
+                apr,
+                base_workspace_revision,
+                lambda document: operation(document, apr, connection),
+                author,
+            )
+
+    def save_workspace(self, connection, apr, base_workspace_revision, operation, author="local"):
         from app.workspace_schema import workspace_document
         from app.workspace_service import read_workspace
 
-        with self.database.transaction() as connection:
-            apr = self.load(connection, project_id)
-            current = read_workspace(connection, project_id)
-            if current["workspace_revision"] != base_workspace_revision:
-                raise DomainError(
-                    "WORKSPACE_CONFLICT",
-                    "Canvas changed. Review the server version.",
-                    409,
-                    {"workspace_revision": current["workspace_revision"]},
-                )
-            try:
-                document = workspace_document(operation(current["document"], apr, connection), apr)
-            except (ValueError, KeyError) as error:
-                raise DomainError("INVALID_WORKSPACE", str(error), 422) from error
-            revision = current["workspace_revision"] + 1
-            values = dict(
-                revision=revision, payload=document, author=author, updated_at=time.time()
+        project_id = apr["project_id"]
+        current = read_workspace(connection, project_id)
+        if current["workspace_revision"] != base_workspace_revision:
+            raise DomainError(
+                "WORKSPACE_CONFLICT",
+                "Canvas changed. Review the server version.",
+                409,
+                {"workspace_revision": current["workspace_revision"]},
             )
-            if current["initialized"]:
-                connection.execute(
-                    update(db.workspaces)
-                    .where(
-                        db.workspaces.c.project_id == str(project_id),
-                        db.workspaces.c.revision == base_workspace_revision,
-                    )
-                    .values(**values)
+        try:
+            document = workspace_document(operation(current["document"]), apr)
+        except (ValueError, KeyError) as error:
+            raise DomainError("INVALID_WORKSPACE", str(error), 422) from error
+        revision = current["workspace_revision"] + 1
+        values = dict(revision=revision, payload=document, author=author, updated_at=time.time())
+        if current["initialized"]:
+            connection.execute(
+                update(db.workspaces)
+                .where(
+                    db.workspaces.c.project_id == str(project_id),
+                    db.workspaces.c.revision == base_workspace_revision,
                 )
-            else:
-                connection.execute(
-                    insert(db.workspaces).values(project_id=str(project_id), **values)
-                )
-            emit(connection, str(project_id), "workspace.updated", {"workspace_revision": revision})
-            return read_workspace(connection, project_id)
+                .values(**values)
+            )
+        else:
+            connection.execute(insert(db.workspaces).values(project_id=str(project_id), **values))
+        emit(connection, str(project_id), "workspace.updated", {"workspace_revision": revision})
+        return read_workspace(connection, project_id)
 
     def invalidate(self, connection, apr, shot_ids):
         graph = {}

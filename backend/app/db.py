@@ -232,7 +232,7 @@ class Database:
         command.upgrade(config, "head")
 
     @contextmanager
-    def transaction(self):
+    def transaction(self, *, snapshot=False):
         with self.engine.connect() as connection:
             connection.exec_driver_sql("BEGIN IMMEDIATE")
             try:

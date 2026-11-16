@@ -24,6 +24,7 @@ type Connection = {
   dirty: boolean;
   busy: boolean;
   paused: boolean;
+  refreshPending: boolean;
   revision: number;
   savedHash: string;
   timer?: ReturnType<typeof setTimeout>;
@@ -75,16 +76,16 @@ export function useCanvasBoard(project: Project) {
   const [syncStatus, setSyncStatus] = useState("正在读取画布");
   const connection = useRef<Connection | null>(null);
   const schedule = useRef<() => void>(() => {});
-  const reload = useRef<(mode: "retry" | "replace") => Promise<void>>(
-    async () => {},
-  );
+  const reload = useRef<
+    (mode: "retry" | "replace" | "refresh") => Promise<void>
+  >(async () => {});
   const publish = useCallback(
     (value: BoardHistory, persist = true) => {
       current.current = value;
       setHistory(value);
+      const state = connection.current;
+      if (state) state.dirty = hash(value.present) !== state.savedHash;
       if (persist) {
-        const state = connection.current;
-        if (state) state.dirty = hash(value.present) !== state.savedHash;
         try {
           localStorage.setItem(
             `afds-canvas-${projectId}`,
@@ -112,6 +113,7 @@ export function useCanvasBoard(project: Project) {
       dirty: local.dirty,
       busy: false,
       paused: false,
+      refreshPending: false,
       revision: 0,
       savedHash: hash(local.board),
     };
@@ -162,6 +164,10 @@ export function useCanvasBoard(project: Project) {
         );
       } finally {
         state.busy = false;
+        if (state.active && state.refreshPending) {
+          state.refreshPending = false;
+          void load("refresh");
+        }
         if (state.active && !state.paused && state.dirty) schedule.current();
       }
     }
@@ -171,7 +177,11 @@ export function useCanvasBoard(project: Project) {
         state.timer = setTimeout(() => void flush(), 250);
       }
     };
-    async function load(mode: "initial" | "retry" | "replace") {
+    async function load(mode: "initial" | "retry" | "replace" | "refresh") {
+      if (mode === "refresh" && (!state.ready || state.busy)) {
+        state.refreshPending = true;
+        return;
+      }
       clearTimeout(state.timer);
       try {
         const saved = await api<WorkspaceSnapshot>(path);
@@ -183,6 +193,11 @@ export function useCanvasBoard(project: Project) {
         ) {
           throw new Error("画布服务返回了无效数据。");
         }
+        if (saved.workspace_revision < state.revision) return;
+        if (mode === "refresh" && saved.workspace_revision === state.revision) {
+          if (state.dirty) schedule.current();
+          return;
+        }
         const board = loadBoard(
           projectRef.current,
           JSON.stringify({ ...current.current.present, ...saved.document }),
@@ -192,7 +207,11 @@ export function useCanvasBoard(project: Project) {
         state.savedHash = hash(board);
         const hasDraft =
           state.dirty && hash(current.current.present) !== state.savedHash;
-        if (mode === "initial" && saved.initialized && hasDraft) {
+        if (
+          (mode === "initial" || mode === "refresh") &&
+          saved.initialized &&
+          hasDraft
+        ) {
           state.paused = true;
           setSyncStatus("画布草稿待同步");
           setSyncError(
@@ -204,7 +223,9 @@ export function useCanvasBoard(project: Project) {
         setSyncError("");
         if (
           mode === "replace" ||
-          (mode === "initial" && saved.initialized && !hasDraft)
+          ((mode === "initial" || mode === "refresh") &&
+            saved.initialized &&
+            !hasDraft)
         ) {
           state.dirty = false;
           publish(
@@ -232,6 +253,16 @@ export function useCanvasBoard(project: Project) {
             "服务器画布暂不可用，本机草稿已保留。可在连接恢复后重新保存。",
           );
         }
+      } finally {
+        if (
+          state.active &&
+          state.ready &&
+          state.refreshPending &&
+          !state.busy
+        ) {
+          state.refreshPending = false;
+          void load("refresh");
+        }
       }
     }
     reload.current = load;
@@ -241,6 +272,17 @@ export function useCanvasBoard(project: Project) {
       clearTimeout(state.timer);
     };
   }, [projectId, publish]);
+  const previousFilm = useRef({ projectId, revision: project.revision });
+  useEffect(() => {
+    const previous = previousFilm.current;
+    previousFilm.current = { projectId, revision: project.revision };
+    if (
+      previous.projectId === projectId &&
+      previous.revision !== project.revision
+    ) {
+      void reload.current("refresh");
+    }
+  }, [projectId, project.revision]);
   function change(
     update: (board: CanvasBoard) => CanvasBoard,
     remember = true,

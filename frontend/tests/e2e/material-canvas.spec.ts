@@ -186,6 +186,8 @@ test("freely places mixed media, drags groups, connects inputs and persists the 
   await flowNode(audioNode)
     .locator(".node-drag-handle")
     .click({ modifiers: ["Shift"] });
+  await expect(flowNode(videoNode)).toHaveClass(/selected/);
+  await expect(flowNode(audioNode)).toHaveClass(/selected/);
   const beforeGroup = await readBoard();
   const grip = (await flowNode(videoNode)
     .locator(".node-drag-handle")

@@ -11,9 +11,9 @@ const project = {
   assets: [],
 } as unknown as Project;
 const savedDocument = {
-  version: 2,
+  version: 2 as const,
   positions: { "note-server": { x: -40, y: 20 } },
-  nodes: [{ id: "note-server", kind: "note", text: "服务器便签" }],
+  nodes: [{ id: "note-server", kind: "note" as const, text: "服务器便签" }],
   edges: [],
   hiddenShots: [],
 };
@@ -31,6 +31,65 @@ afterEach(() => {
   cleanup();
   localStorage.clear();
   vi.unstubAllGlobals();
+});
+
+it("refreshes a restored workspace when the film revision advances", async () => {
+  let restored = false;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      response(
+        restored
+          ? snapshot()
+          : {
+              ...snapshot(0, false),
+              document: { ...savedDocument, nodes: [], positions: {} },
+            },
+      ),
+    ),
+  );
+  const { result, rerender } = renderHook(
+    ({ value }) => useCanvasBoard(value),
+    { initialProps: { value: project } },
+  );
+  await waitFor(() => expect(result.current.syncStatus).toBe("画布已保存"));
+  restored = true;
+  rerender({ value: { ...project, revision: project.revision + 1 } });
+  await waitFor(() =>
+    expect(result.current.board.nodes).toEqual(savedDocument.nodes),
+  );
+});
+
+it("retains a pointer gesture draft when the initial server read completes", async () => {
+  let completeRead: ((response: Response) => void) | undefined;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          completeRead = resolve;
+        }),
+    ),
+  );
+  const { result } = renderHook(() => useCanvasBoard(project));
+  act(() => {
+    result.current.startGesture();
+    result.current.change(
+      () => ({
+        ...emptyBoard(),
+        ...savedDocument,
+        positions: { "note-server": { x: 14, y: 18 } },
+      }),
+      false,
+      false,
+    );
+  });
+  await act(async () => completeRead!(response(snapshot())));
+  await waitFor(() => expect(result.current.syncError).toContain("草稿"));
+  expect(result.current.board.positions["note-server"]).toEqual({
+    x: 14,
+    y: 18,
+  });
 });
 
 it("loads shared layout while retaining the browser viewport", async () => {

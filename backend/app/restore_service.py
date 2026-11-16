@@ -55,7 +55,7 @@ def invalid(message="Invalid or unsupported AFDS project archive"):
 
 def inspect_directory(path):
     # Bound central-directory allocation before ZipFile creates Python entries.
-    # Current exports are <2GB/<10005members, so global ZIP64/spanned EOCDs are unnecessary.
+    # Current exports are <2GB/<10006members, so global ZIP64/spanned EOCDs are unnecessary.
     size = path.stat().st_size
     with path.open("rb") as handle:
         # Include the preceding 20-byte locator even with a maximum-length ZIP comment.
@@ -218,8 +218,11 @@ class RestoreService:
                         raise invalid("Archive contains an unsafe member")
                 if not schema.METADATA_NAMES <= set(names):
                     raise invalid("Archive metadata is missing")
+                metadata_names = set(schema.METADATA_NAMES)
+                if "workspace.json" in names:
+                    metadata_names.add("workspace.json")
                 if (
-                    sum(archive.getinfo(n).file_size for n in schema.METADATA_NAMES)
+                    sum(archive.getinfo(n).file_size for n in metadata_names)
                     > schema.MAX_METADATA_BYTES
                 ):
                     raise invalid("Archive metadata exceeds limit")
@@ -238,6 +241,16 @@ class RestoreService:
                     or apr["revision"] != manifest["snapshot_revision"]
                 ):
                     raise invalid("Project snapshot binding is invalid")
+                workspace = None
+                if manifest["export_version"] == "0.3.0":
+                    from app.workspace_schema import workspace_document
+
+                    if "workspace.json" not in names:
+                        raise invalid("Workspace snapshot is missing")
+                    content = archive.read("workspace.json")
+                    if hashlib.sha256(content).hexdigest() != manifest["workspace_sha256"]:
+                        raise invalid("Workspace snapshot hash differs from manifest")
+                    workspace = workspace_document(schema.strict_json(content), apr)
                 assets = {a["id"]: a for a in apr["assets"]}
                 rows = manifest["assets"]
                 if len({a["id"] for a in rows}) != len(rows) or set(assets) != {
@@ -245,6 +258,8 @@ class RestoreService:
                 }:
                     raise invalid("Project asset manifest is incomplete")
                 members = set(schema.METADATA_NAMES)
+                if workspace is not None:
+                    members.add("workspace.json")
                 for row in rows:
                     if {k: v for k, v in row.items() if k != "uri"} != assets[row["id"]] or Path(
                         row["uri"]
@@ -271,7 +286,7 @@ class RestoreService:
                     ):
                         raise invalid("OTIO references unavailable media")
                 files, extracted = [], {}
-                total = sum(archive.getinfo(n).file_size for n in schema.METADATA_NAMES)
+                total = sum(archive.getinfo(n).file_size for n in metadata_names)
                 for row in rows:
                     check()
                     info = archive.getinfo(row["uri"])
@@ -296,6 +311,10 @@ class RestoreService:
                     files.append({"original_id": row["id"], "path": path, "metadata": metadata})
                 check()
             restored, mapping = self.remap(apr, request, job["id"])
+            if workspace is not None:
+                from app.workspace_service import remap_workspace
+
+                workspace = remap_workspace(workspace, mapping)
             for item in files:
                 aid = mapping[item.pop("original_id")]
                 asset = next(a for a in restored["assets"] if a["id"] == aid)
@@ -304,6 +323,7 @@ class RestoreService:
             restored = validate(restored)
             return {
                 "apr": restored,
+                "workspace": workspace,
                 "files": files,
                 "receipt": {
                     "source_project_id": apr["project_id"],
@@ -312,6 +332,7 @@ class RestoreService:
                     "asset_count": len(files),
                     "history_restored": False,
                     "cost_ledger_restored": False,
+                    "source_workspace_revision": manifest.get("workspace_revision"),
                 },
             }
         except (
@@ -485,6 +506,14 @@ class RestoreService:
             self.engine.save(
                 connection, result["apr"], before, "Restore portable project copy", "worker"
             )
+            if result.get("workspace") is not None:
+                self.engine.save_workspace(
+                    connection,
+                    result["apr"],
+                    0,
+                    lambda _: result["workspace"],
+                    "worker",
+                )
             self.queue.set_state(connection, current, "verifying", progress=95)
             self.queue.set_state(
                 connection,

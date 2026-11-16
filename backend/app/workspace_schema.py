@@ -64,6 +64,19 @@ class WorkspaceUpdate(WorkspaceModel):
     document: WorkspaceDocument
 
 
+class WorkspaceSnapshot(WorkspaceModel):
+    project_id: UUID
+    workspace_revision: int = Field(ge=0)
+    initialized: bool
+    document: WorkspaceDocument
+
+    @model_validator(mode="after")
+    def consistent_revision(self):
+        if self.initialized != (self.workspace_revision > 0):
+            raise ValueError("Workspace initialization and revision disagree")
+        return self
+
+
 def workspace_document(document, apr):
     """Validate every reference against the owned project snapshot."""
     value = WorkspaceDocument.model_validate(document).model_dump(mode="json", by_alias=True)

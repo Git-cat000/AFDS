@@ -304,7 +304,8 @@ def test_central_directory_bounds_precede_zipfile_allocation(
     client, database = destination
     data = bytearray(archive)
     offset = data.rfind(b"PK\x05\x06")
-    struct.pack_into("<HH", data, offset + 8, 10005, 10005)
+    limit = restore.schema.MAX_MEMBERS + 1
+    struct.pack_into("<HH", data, offset + 8, limit, limit)
 
     def must_not_parse(*args, **kwargs):
         raise AssertionError("Unbounded central directory was parsed")

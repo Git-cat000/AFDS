@@ -35,11 +35,16 @@ def create_export(project_id: UUID, body: ExportRequest, request: Request):
 
     database = request.app.state.database
     engine = ProjectEngine(database)
-    with database.transaction() as connection:
+    from app.workspace_service import read_workspace
+
+    with database.transaction(snapshot=True) as connection:
         apr = engine.load(connection, project_id)
         engine.check_revision(apr, body.base_revision)
         job = Queue(database).enqueue(
-            connection, apr, "export_project", export_request(apr, body.format)
+            connection,
+            apr,
+            "export_project",
+            export_request(apr, body.format, read_workspace(connection, project_id)),
         )
         return public_job(job)
 

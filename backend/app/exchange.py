@@ -69,9 +69,11 @@ class ExportSnapshot(BaseModel):
     snapshot_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     snapshot: dict
     asset_manifest: list[ManifestAsset] = Field(max_length=MAX_EXPORT_ASSETS)
+    workspace: dict | None = None
+    workspace_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     provider_id: Literal["local-exchange"] = "local-exchange"
     model_id: Literal["opentimelineio"] = "opentimelineio"
-    adapter_version: Literal["0.2.0"] = EXPORT_VERSION
+    adapter_version: Literal["0.2.0", "0.3.0"] = EXPORT_VERSION
 
 
 def _json(value):
@@ -92,7 +94,7 @@ def _redact(value):
     return value
 
 
-def export_request(apr, format):
+def export_request(apr, format, workspace=None):
     """Detach and validate an APR; pin the revision and every exported asset hash.
 
     Deliberately includes all assets listed in the APR, including posters and
@@ -104,6 +106,15 @@ def export_request(apr, format):
     if format not in {"otio", "zip"}:
         raise DomainError("VALIDATION_ERROR", "Export format must be otio or zip", 422)
     snapshot = validate(_redact(apr))
+    if workspace is not None:
+        from app.workspace_schema import WorkspaceSnapshot, workspace_document
+
+        workspace = WorkspaceSnapshot.model_validate(workspace).model_dump(
+            mode="json", by_alias=True
+        )
+        if workspace["project_id"] != snapshot["project_id"]:
+            raise DomainError("INVALID_WORKSPACE", "Workspace belongs to another project", 422)
+        workspace["document"] = workspace_document(workspace["document"], snapshot)
     encoded = _json(snapshot)
     if len(encoded) > MAX_METADATA_BYTES or len(snapshot["assets"]) > MAX_EXPORT_ASSETS:
         raise DomainError("EXPORT_TOO_LARGE", "Project exceeds export limits", 413)
@@ -122,6 +133,11 @@ def export_request(apr, format):
         snapshot_sha256=hashlib.sha256(encoded).hexdigest(),
         snapshot=snapshot,
         asset_manifest=manifest,
+        workspace=workspace,
+        workspace_sha256=hashlib.sha256(_json(workspace["document"])).hexdigest()
+        if workspace
+        else None,
+        adapter_version="0.3.0" if workspace else "0.2.0",
     ).model_dump(mode="json")
 
 
@@ -368,7 +384,9 @@ def execute_export(database, job, work, checkpoint):
     check()
     try:
         request = ExportSnapshot.model_validate(job["request"]).model_dump(mode="json")
-        expected = export_request(request["snapshot"], request["export_format"])
+        expected = export_request(
+            request["snapshot"], request["export_format"], request["workspace"]
+        )
     except (ValidationError, KeyError, ValueError, TypeError) as error:
         raise DomainError("VALIDATION_ERROR", "Invalid export snapshot", 422) from error
     if job.get("operation") != "export_project" or request != expected:
@@ -385,7 +403,7 @@ def execute_export(database, job, work, checkpoint):
     check()
     document = _otio_document(otio, snapshot, assets)
     manifest = {
-        "export_version": EXPORT_VERSION,
+        "export_version": request["adapter_version"],
         "project_id": snapshot["project_id"],
         "snapshot_revision": request["snapshot_revision"],
         "snapshot_sha256": request["snapshot_sha256"],
@@ -394,6 +412,12 @@ def execute_export(database, job, work, checkpoint):
         "assets": [{k: v for k, v in asset.items() if k != "_path"} for asset in assets],
         "limitations": LIMITATIONS,
     }
+    if request["workspace"] is not None:
+        manifest.update(
+            workspace="workspace.json",
+            workspace_revision=request["workspace"]["workspace_revision"],
+            workspace_sha256=request["workspace_sha256"],
+        )
     metadata_files = {
         "project.apr.json": _json(snapshot),
         "manifest.json": _json(manifest),
@@ -406,6 +430,9 @@ def execute_export(database, job, work, checkpoint):
         ).encode(),
     }
     metadata_size = sum(map(len, metadata_files.values()))
+    if request["workspace"] is not None:
+        metadata_files["workspace.json"] = _json(request["workspace"]["document"])
+        metadata_size += len(metadata_files["workspace.json"])
     if metadata_size > MAX_METADATA_BYTES:
         raise DomainError("EXPORT_TOO_LARGE", "Project metadata exceeds export limits", 413)
     if metadata_size + sum(a["size_bytes"] for a in assets) > MAX_EXPORT_BYTES:

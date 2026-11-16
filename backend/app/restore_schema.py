@@ -4,13 +4,13 @@ import json
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.schemas import Asset, Schema
 
 MAX_ARCHIVE_BYTES = 2 * 1024**3
 MAX_METADATA_BYTES = 16 * 1024**2
-MAX_MEMBERS = 10004
+MAX_MEMBERS = 10005
 METADATA_NAMES = {"project.apr.json", "manifest.json", "timeline.otio", "README.txt"}
 
 
@@ -21,7 +21,7 @@ class PortableAsset(Asset):
 
 
 class RestoreManifest(Schema):
-    export_version: Literal["0.2.0"]
+    export_version: Literal["0.2.0", "0.3.0"]
     project_id: UUID
     snapshot_revision: int = Field(ge=1)
     snapshot_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -29,6 +29,18 @@ class RestoreManifest(Schema):
     timeline: Literal["timeline.otio"]
     assets: list[PortableAsset] = Field(max_length=10000)
     limitations: list[str] = Field(max_length=20)
+    workspace: Literal["workspace.json"] | None = None
+    workspace_revision: int | None = Field(default=None, ge=0)
+    workspace_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def workspace_binding(self):
+        fields = [self.workspace, self.workspace_revision, self.workspace_sha256]
+        if self.export_version == "0.3.0" and any(value is None for value in fields):
+            raise ValueError("Workspace export metadata is incomplete")
+        if self.export_version == "0.2.0" and any(value is not None for value in fields):
+            raise ValueError("Legacy archive contains incompatible workspace metadata")
+        return self
 
 
 class RestoreJobRequest(Schema):
