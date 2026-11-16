@@ -50,7 +50,23 @@ def interpreter(path):
             "options": ["-NoProfile", "-NonInteractive", "-File"],
         }
     if suffix == ".sh":
-        return {"name": "Bash", "executable": shutil.which("bash"), "options": ["--"]}
+        executable = shutil.which("bash")
+        if os.name == "nt":
+            git = shutil.which("git")
+            if git:
+                root = Path(git).resolve().parent.parent
+                executable = next(
+                    (
+                        str(value)
+                        for value in (root / "bin/bash.exe", root / "usr/bin/bash.exe")
+                        if value.is_file()
+                    ),
+                    executable,
+                )
+            windows = Path(os.environ.get("SYSTEMROOT", "C:/Windows")).resolve()
+            if executable and Path(executable).resolve().is_relative_to(windows):
+                executable = None
+        return {"name": "Bash", "executable": executable, "options": ["--"]}
     raise DomainError(
         "SCRIPT_UNSUPPORTED", "Select a Python, JavaScript, PowerShell or Bash script", 422
     )

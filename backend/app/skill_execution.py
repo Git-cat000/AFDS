@@ -133,8 +133,9 @@ class SkillExecution:
             )
         if script["size"] > 256 * 1024:
             raise DomainError("SCRIPT_SOURCE_LIMIT", "Review scripts up to256KiB", 422)
-        if "input.json" in package["files"] or any(
-            name.startswith("outputs/") for name in package["files"]
+        if any(
+            name.split("/", 1)[0].casefold() in {"input.json", "outputs"}
+            for name in package["files"]
         ):
             raise DomainError(
                 "SCRIPT_WORKSPACE_CONFLICT",
@@ -309,7 +310,8 @@ class SkillExecution:
             connection.execute(
                 update(db.jobs).where(db.jobs.c.id == job["id"]).values(payload=payload)
             )
-        arguments = [runtime["executable"], *runtime["options"], str(source), *request["arguments"]]
+        source_path = source.as_posix() if runtime["name"] == "Bash" else str(source)
+        arguments = [runtime["executable"], *runtime["options"], source_path, *request["arguments"]]
         result = run_script(arguments, work, context, request["timeout_seconds"], checkpoint)
         result.update(
             kind="script",

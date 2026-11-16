@@ -4,12 +4,15 @@ import base64
 import binascii
 import hashlib
 import json
+import lzma
 import mimetypes
 import re
 import stat
+import struct
 import tempfile
 import time
 import zipfile
+import zlib
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 
@@ -38,6 +41,35 @@ SECRET = re.compile(
 
 def invalid(message):
     return DomainError("SKILL_INVALID", message, 422)
+
+
+def inspect_skill_directory(path):
+    declared = inspect_directory(path)
+    if declared > MAX_FILES:
+        raise invalid("ZIP exceeds256members")
+    size = path.stat().st_size
+    with path.open("rb") as handle:
+        tail_start = max(0, size - 65577)
+        handle.seek(tail_start)
+        tail = handle.read(65577)
+        footer = tail.rfind(b"PK\x05\x06")
+        length = struct.unpack_from("<I", tail, footer + 12)[0]
+        # Match ZipFile's effective directory location, including prepended data.
+        handle.seek(tail_start + footer - length)
+        remaining, actual = length, 0
+        while remaining:
+            header = handle.read(46)
+            if len(header) != 46 or header[:4] != b"PK\x01\x02":
+                raise invalid("Invalid ZIP central directory")
+            name_size, extra_size, comment_size = struct.unpack_from("<3H", header, 28)
+            entry_size = 46 + name_size + extra_size + comment_size
+            actual += 1
+            if entry_size > remaining or actual > MAX_FILES:
+                raise invalid("Actual ZIP directory exceeds256members")
+            handle.seek(entry_size - 46, 1)
+            remaining -= entry_size
+        if actual != declared:
+            raise invalid("ZIP directory member count is inconsistent")
 
 
 def safe_name(name):
@@ -286,8 +318,7 @@ class SkillLibrary:
             with tempfile.TemporaryDirectory(dir=root) as temporary:
                 path = Path(temporary) / "skill.zip"
                 path.write_bytes(content)
-                if inspect_directory(path) > MAX_FILES:
-                    raise invalid("ZIP exceeds256members")
+                inspect_skill_directory(path)
                 with zipfile.ZipFile(path) as archive:
                     total = 0
                     for item in archive.infolist():
@@ -308,7 +339,16 @@ class SkillLibrary:
                                     content_base64=base64.b64encode(data).decode(),
                                 )
                             )
-        except (zipfile.BadZipFile, OSError, RuntimeError, ValueError) as error:
+        except (
+            zipfile.BadZipFile,
+            OSError,
+            RuntimeError,
+            ValueError,
+            EOFError,
+            NotImplementedError,
+            zlib.error,
+            lzma.LZMAError,
+        ) as error:
             raise invalid("Cannot read skill ZIP") from error
         return self.import_files(files, stages, source)
 

@@ -3,6 +3,7 @@ import json
 import os
 import time
 
+import pytest
 from conftest import project
 from sqlalchemy import update
 from test_skills import package_files
@@ -285,3 +286,79 @@ pathlib.Path('outputs/private.txt').write_text(value)
     assert result["error"]["code"] == "SCRIPT_OUTPUT_CREDENTIAL", result
     assert result["skill_result"]["stdout"].strip() == "[REDACTED]"
     assert result["skill_result"]["artifacts"] == []
+
+
+@pytest.mark.parametrize(
+    "reserved", ["input.json/reference.txt", "outputs", "Input.JSON", "Outputs/result.txt"]
+)
+def test_workspace_reserved_roots_are_rejected_before_approval(client, reserved):
+    apr = project(client)
+    imported = client.post(
+        "/api/v1/skills/import",
+        json={"files": package_files({reserved: "DEMO"}), "stages": ["shots"]},
+    )
+    assert imported.status_code == 201, imported.text
+    response = client.post(
+        f"/api/v1/projects/{apr['project_id']}/skills/scripts/preview",
+        json={
+            "base_revision": apr["revision"],
+            "package_id": imported.json()["id"],
+            "script_path": "scripts/inspect.py",
+            "stage": "shots",
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "SCRIPT_WORKSPACE_CONFLICT"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows native Bash resolution")
+@pytest.mark.parametrize("native", [False, True])
+def test_windows_bash_uses_native_git_bash_or_reports_unavailable(tmp_path, monkeypatch, native):
+    import shutil
+
+    from app.skill_process import interpreter
+
+    git = tmp_path / "Git" / "cmd" / "git.exe"
+    bash = tmp_path / "Git" / "bin" / "bash.exe"
+    bash.parent.mkdir(parents=True)
+    bash.touch()
+    shim = os.path.join(os.environ["SYSTEMROOT"], "System32", "bash.exe")
+    monkeypatch.setattr(
+        shutil,
+        "which",
+        lambda name: str(git) if name == "git" and native else shim if name == "bash" else None,
+    )
+    result = interpreter("scripts/inspect.sh")
+    assert result["executable"] == (str(bash) if native else None)
+
+
+@pytest.mark.parametrize(
+    "suffix,code,expected",
+    [
+        (".ps1", "Write-Output 'DEMO native PowerShell'\n", "DEMO native PowerShell"),
+        (".sh", "printf 'DEMO native Bash\\n'\n", "DEMO native Bash"),
+    ],
+)
+def test_available_native_shell_scripts_run_through_approved_jobs(client, suffix, code, expected):
+    from app.skill_process import interpreter
+
+    if not interpreter("inspect" + suffix)["executable"]:
+        pytest.skip("Native interpreter unavailable on this host")
+    apr = project(client)
+    plan = script_preview(client, apr, code, script_path="scripts/inspect" + suffix)
+    job = execute_script(client, apr, plan).json()
+    Worker(client.app.state.database).run_once()
+    result = read_job(client, apr, job)
+    assert result["state"] == "completed", result
+    assert result["skill_result"]["stdout"].strip() == expected
+
+
+def test_concurrent_approvals_return_one_script_job(client):
+    from concurrent.futures import ThreadPoolExecutor
+
+    apr = project(client)
+    plan = script_preview(client, apr)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(lambda _: execute_script(client, apr, plan), range(2)))
+    assert all(response.status_code == 202 for response in responses)
+    assert len({response.json()["id"] for response in responses}) == 1

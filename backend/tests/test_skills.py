@@ -1,9 +1,13 @@
 import base64
 import io
+import struct
 import zipfile
 
 import pytest
 from conftest import storyboard
+from sqlalchemy import delete
+
+from app import db
 
 GUIDE = """---
 name: external-camera
@@ -118,3 +122,61 @@ def test_guidance_preview_commit_is_source_pinned_and_preserves_existing_project
         client.post(f"{root}/skills/guidance/commit", json={**body, "approved": True}).status_code
         == 409
     )
+
+
+def test_zip_actual_member_count_is_bounded_before_zipinfo_allocation(client, monkeypatch):
+    content = io.BytesIO()
+    with zipfile.ZipFile(content, "w") as archive:
+        archive.writestr("SKILL.md", GUIDE)
+        for index in range(256):
+            archive.writestr(f"references/note-{index}.md", "DEMO")
+    raw = bytearray(content.getvalue())
+    end = raw.rfind(b"PK\x05\x06")
+    struct.pack_into("<HH", raw, end + 8, 1, 1)
+
+    def unexpected(*arguments, **keywords):
+        raise AssertionError("ZipInfo allocation happened before member-count validation")
+
+    monkeypatch.setattr(zipfile, "ZipFile", unexpected)
+    response = client.post("/api/v1/skills/import-zip?stages=shots", content=bytes(raw))
+    assert response.status_code == 422, response.text
+
+
+def test_invalid_deflate_member_returns_typed_import_rejection(client):
+    content = io.BytesIO()
+    with zipfile.ZipFile(content, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("SKILL.md", GUIDE)
+    raw = bytearray(content.getvalue())
+    name_length, extra_length = struct.unpack_from("<HH", raw, 26)
+    raw[30 + name_length + extra_length] = 7
+    response = client.post("/api/v1/skills/import-zip?stages=shots", content=bytes(raw))
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "SKILL_INVALID"
+
+
+def test_unrelated_profile_edits_preserve_missing_portable_packages(client):
+    apr = storyboard(client)
+    imported = import_package(client).json()
+    root = f"/api/v1/projects/{apr['project_id']}"
+    selected = {"shots": [{"package_id": imported["id"], "resources": ["references/framing.md"]}]}
+    first = client.post(
+        f"{root}/skills/guidance/commit",
+        json={"base_revision": apr["revision"], "approved": True, "selections": selected},
+    )
+    assert first.status_code == 200, first.text
+    apr = first.json()
+    with client.app.state.database.transaction() as connection:
+        connection.execute(
+            delete(db.skill_packages).where(db.skill_packages.c.id == imported["id"])
+        )
+    builtin = client.get("/api/v1/skills?stage=story").json()["items"][0]
+    body = {
+        "base_revision": apr["revision"],
+        "selections": {**selected, "story": [{"package_id": builtin["id"]}]},
+    }
+    preview = client.post(f"{root}/skills/guidance/preview", json=body)
+    assert preview.status_code == 200, preview.text
+    result = client.post(f"{root}/skills/guidance/commit", json={**body, "approved": True})
+    assert result.status_code == 200, result.text
+    assert result.json()["production_guidance"]["shots"] == apr["production_guidance"]["shots"]
+    assert result.json()["shots"] == apr["shots"]

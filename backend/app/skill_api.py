@@ -1,5 +1,6 @@
 """Local skill library and revisioned project guidance endpoints."""
 
+import copy
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
@@ -90,10 +91,23 @@ def resource(package_id: str, request: Request, path: str = Query(max_length=240
 
 def configure(project_id, body, request, commit):
     database = request.app.state.database
-    selected = {
-        stage: [SkillLibrary(database).snapshot(value) for value in selections]
-        for stage, selections in body.selections.items()
-    }
+    engine = ProjectEngine(database)
+    apr = engine.read(project_id)
+    engine.check_revision(apr, body.base_revision)
+    library = SkillLibrary(database)
+    selected = {}
+    for stage, selections in body.selections.items():
+        existing = {
+            value["package_id"]: value for value in apr["production_guidance"].get(stage, [])
+        }
+        guides = []
+        for selection in selections:
+            prior = existing.get(selection.package_id)
+            if prior and [item["path"] for item in prior["resources"]] == selection.resources:
+                guides.append(copy.deepcopy(prior))
+            else:
+                guides.append(library.snapshot(selection))
+        selected[stage] = guides
     change = ChangeSet(
         base_revision=body.base_revision,
         approved=body.approved,
@@ -110,7 +124,7 @@ def configure(project_id, body, request, commit):
     )
     if commit and not body.approved:
         raise DomainError("APPROVAL_REQUIRED", "Approve the selected production guidance", 409)
-    return ProjectEngine(database).changeset(project_id, change, commit=commit)
+    return engine.changeset(project_id, change, commit=commit)
 
 
 @router.post("/projects/{project_id}/skills/guidance/preview")
