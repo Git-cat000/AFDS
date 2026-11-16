@@ -87,6 +87,10 @@ class Worker:
                 from app.audio_pipeline import process_audio_import
 
                 result = process_audio_import(self.settings, job["request"], work, checkpoint)
+            elif job["operation"] == "import_video":
+                from app.video_import import process_video_import
+
+                result = process_video_import(self.settings, job["request"], work, checkpoint)
             elif job["operation"] == "import_image":
                 from app.image_service import process_image
 
@@ -106,19 +110,33 @@ class Worker:
 
                 result = RestoreService(self.database).execute(job, work, checkpoint)
             else:
+                video_items = job["request"]["items"] + [
+                    item
+                    for track in job["request"].get("video_layers", [])
+                    for item in track["items"]
+                ]
                 sources = [
                     asset_path(self.database, job["project_id"], item["asset_id"])
-                    for item in job["request"]["items"]
+                    for item in video_items
                 ]
-                for source, item in zip(sources, job["request"]["items"], strict=True):
+                for source, item in zip(sources, video_items, strict=True):
                     if file_hash(source) != item["sha256"]:
                         raise DomainError(
                             "HASH_MISMATCH", "Input media integrity check failed", 422
                         )
-                result = {
-                    "video": output,
-                    "metadata": render(self.settings, job["request"], sources, output, checkpoint),
-                }
+                if job["request"].get("composition_version") == "0.5.0":
+                    from app.composition_render import render_composition
+
+                    source_map = {
+                        item["asset_id"]: source
+                        for item, source in zip(video_items, sources, strict=True)
+                    }
+                    metadata = render_composition(
+                        self.settings, job["request"], source_map, output, checkpoint
+                    )
+                else:
+                    metadata = render(self.settings, job["request"], sources, output, checkpoint)
+                result = {"video": output, "metadata": metadata}
                 if job["request"].get("audio_items") or job["request"].get("captions"):
                     from app.audio_pipeline import finish_audio
 
@@ -135,6 +153,14 @@ class Worker:
                         self.settings, job["request"], audio_sources, output, mixed, checkpoint
                     )
                     result["video"] = mixed
+                if job["operation"] == "render_preview":
+                    from app.composition_render import trim_preview
+
+                    preview_output = work / "preview.mp4"
+                    result["metadata"] = trim_preview(
+                        self.settings, job["request"], result["video"], preview_output, checkpoint
+                    )
+                    result["video"] = preview_output
             elapsed_ms = int((time.monotonic() - started) * 1000)
             if job["operation"] in {"check_production", "run_skill_script"}:
                 from app.skill_execution import SkillExecution
@@ -244,7 +270,7 @@ class Worker:
                 ]
             if job["request"].get("reference_images"):
                 provenance["reference_images"] = job["request"]["reference_images"]
-            if job["operation"] in {"import_audio", "import_image"}:
+            if job["operation"] in {"import_audio", "import_image", "import_video"}:
                 provenance.update(
                     name=job["request"]["name"],
                     rights_confirmed=True,
@@ -256,10 +282,16 @@ class Worker:
             for key in ("audio", "caption_count"):
                 if key in metadata:
                     provenance[key] = metadata.pop(key)
-            if job["operation"] == "render_timeline":
+            if job["operation"] in {"render_timeline", "render_preview"}:
                 input_ids = {
                     item["asset_id"]
-                    for item in job["request"]["items"] + job["request"].get("audio_items", [])
+                    for item in job["request"]["items"]
+                    + job["request"].get("audio_items", [])
+                    + [
+                        item
+                        for track in job["request"].get("video_layers", [])
+                        for item in track["items"]
+                    ]
                 }
                 provenance["is_mock"] = all(
                     asset["provenance"].get("is_mock", False)
@@ -289,6 +321,22 @@ class Worker:
                     connection, job["request"]["provider_config"], asset["media_type"]
                 )
             output_ids = [asset["id"]]
+            for attachment in result.get("attachments", []):
+                related = import_asset(
+                    connection,
+                    self.settings,
+                    job["project_id"],
+                    attachment["path"],
+                    attachment["metadata"],
+                    {
+                        **provenance,
+                        "derived_from_asset_id": asset["id"],
+                        "name": f"{job['request']['name']} 音轨",
+                    },
+                    attachment["media_type"],
+                )
+                apr["assets"].append(related)
+                output_ids.append(related["id"])
             if job["operation"] == "generate_video":
                 poster = import_asset(
                     connection,
@@ -329,6 +377,8 @@ class Worker:
                 "generate_speech",
                 "import_audio",
                 "import_image",
+                "import_video",
+                "render_preview",
             }:
                 fresh = True
             else:

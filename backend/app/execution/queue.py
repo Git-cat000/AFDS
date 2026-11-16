@@ -232,6 +232,8 @@ class Queue:
             "generate_speech",
             "import_audio",
             "import_image",
+            "import_video",
+            "render_preview",
             "review_shot",
             "restore_project",
             "cleanup_storage",

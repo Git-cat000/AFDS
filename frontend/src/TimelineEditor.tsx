@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { AudioLines, Plus, Subtitles, Upload, VolumeX } from "lucide-react";
 import { api, mediaUrl } from "./api";
+import { VideoCompositionEditor } from "./VideoCompositionEditor";
+import type { VideoLayerTrack, VideoTransition } from "./types";
 import "./timeline.css";
 
 type AudioItem = {
@@ -11,6 +13,7 @@ type AudioItem = {
   gain_db: number;
 };
 type VideoItem = {
+  id?: string;
   shot_id: string;
   start_frame: number;
   duration_frames: number;
@@ -35,12 +38,14 @@ type Marker = {
   label: string;
   kind: "beat" | "dialogue" | "note";
 };
-type Composition = {
+export type Composition = {
   tracks: ({ id: string; type: "video"; items: VideoItem[] } | AudioTrack)[];
   captions?: Caption[];
   markers?: Marker[];
+  video_layers?: VideoLayerTrack[];
+  transitions?: VideoTransition[];
 };
-type EditorProject = {
+export type EditorProject = {
   project_id: string;
   revision: number;
   format: { fps_num: number; fps_den: number };
@@ -55,7 +60,7 @@ type EditorProject = {
     id: string;
     media_type: string;
     duration_seconds?: number;
-    provenance?: { provider_id?: string };
+    provenance?: { provider_id?: string; name?: string };
   }[];
   timeline: unknown;
 };
@@ -97,7 +102,7 @@ export function TimelineEditor({
   const captions = timeline.captions || [];
   const markers = timeline.markers || [];
   const totalFrames = videoItems.reduce(
-    (sum, item) => sum + item.duration_frames,
+    (end, item) => Math.max(end, item.start_frame + item.duration_frames),
     0,
   );
   const fps = project.format.fps_num / project.format.fps_den;
@@ -170,11 +175,17 @@ export function TimelineEditor({
 
   return (
     <section className="timeline-editor" aria-label="音频与字幕时间轴">
+      <VideoCompositionEditor
+        key={project.project_id}
+        project={project}
+        run={run}
+        busy={busy}
+      />
       <div className="timeline-heading">
         <div>
           <h2>音频与字幕</h2>
           <p className="muted">
-            一个连续画面主轨，多条音乐与对白音轨。所有位置以项目帧为单位。
+            视频叠加与转场使用上方视频合成编辑器。音频、字幕和锚点位置以项目帧为单位。
           </p>
         </div>
         <span className="timeline-duration">

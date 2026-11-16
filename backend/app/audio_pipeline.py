@@ -185,7 +185,7 @@ def finish_audio(settings, request, audio_sources, video_source, output, checkpo
         raise DomainError("INVALID_TIMELINE", "Composition exceeds supported limits", 422)
     fmt = request["format"]
     rate = Fraction(fmt["fps_num"], fmt["fps_den"])
-    frames = sum(i["duration_frames"] for i in request["items"])
+    frames = request.get("total_frames", sum(i["duration_frames"] for i in request["items"]))
     duration = float(Fraction(frames, 1) / rate)
     if Path(output).resolve() == Path(video_source).resolve():
         raise DomainError("INVALID_PATH", "Finishing requires a separate immutable output", 422)

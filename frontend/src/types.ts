@@ -10,6 +10,32 @@ export type Format = {
   width: number;
   height: number;
 };
+export type VideoLayerClip = {
+  id: string;
+  asset_id: string;
+  asset_version_id?: string | null;
+  start_frame: number;
+  source_start_frame: number;
+  duration_frames: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  opacity: number;
+};
+export type VideoLayerTrack = {
+  id: string;
+  name: string;
+  hidden: boolean;
+  items: VideoLayerClip[];
+};
+export type VideoTransition = {
+  id: string;
+  from_clip_id: string;
+  to_clip_id: string;
+  kind: "dissolve" | "fadeblack" | "wipeleft";
+  duration_frames: number;
+};
 export type AudioTrack = {
   id: string;
   type: "audio";
@@ -122,6 +148,7 @@ export type Project = {
         id: string;
         type: "video";
         items: {
+          id?: string;
           shot_id: string;
           start_frame: number;
           duration_frames: number;
@@ -141,6 +168,8 @@ export type Project = {
       label: string;
       kind: "beat" | "dialogue" | "note";
     }[];
+    video_layers?: VideoLayerTrack[];
+    transitions?: VideoTransition[];
   };
   render_asset_id: string | null;
   render_status: string;

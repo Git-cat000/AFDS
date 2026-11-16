@@ -37,10 +37,15 @@ export async function api<T>(
   body?: unknown,
   method?: string,
 ): Promise<T> {
+  const binary = body instanceof Blob;
   const response = await fetch(`/api/v1${path}`, {
     method: method || (body === undefined ? "GET" : "POST"),
-    headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: {
+      "Content-Type": binary
+        ? body.type || "application/octet-stream"
+        : "application/json",
+    },
+    body: body === undefined ? undefined : binary ? body : JSON.stringify(body),
   });
   const data = await response.json();
   if (!response.ok) {
@@ -78,6 +83,12 @@ export async function api<T>(
       PROVIDER_RETIRED:
         "OpenAI 官方视频服务已停止，请使用兼容的第三方视频服务。",
       CONFIG_CONFLICT: "连接配置已有更新，请刷新页面后重新保存。",
+      INVALID_TIMELINE: "剪辑参数无效，请检查素材、源裁切和成片范围。",
+      COMPOSITION_OVERFLOW:
+        "片段或字幕超出新的成片长度，请预览并调整越界内容。",
+      INVALID_PREVIEW_RANGE: "请选择成片范围内、最多 30 秒的预览区间。",
+      INVALID_VIDEO: "视频格式或内容无效，请使用 MP4、MOV、MKV 或 WebM 文件。",
+      VIDEO_RIGHTS_REQUIRED: "请确认有权使用本视频。",
       REMOTE_CONSENT_REQUIRED: "请先勾选内容发送和费用授权。",
       SECRET_STORE_UNAVAILABLE:
         "本机密钥文件不可用，请恢复 data/secrets 或重新配置连接。",

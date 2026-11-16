@@ -67,12 +67,12 @@
 - `render_preview` 任务复用合成规范，按选择的帧区间及较低分辨率生成带来源修订的预览视频。
 - 视频上传入口采用流式上限 256 MiB、使用权确认及 Worker 检测/规范化，按素材 ID 参与后续剪辑。
 
-- [ ] 添加失败媒体测试 `test_pip_pixels_and_end_frame` 和 `test_transition_frames_are_blended`。使用红/蓝测试视频检查画中画内外像素与结束后的画面，检查转场中间帧及 84 帧输出。视频源有不同帧率时验证统一帧率、裁切和时间戳。
-- [ ] 执行定向媒体测试，确认真实输出缺少对应效果时失败。
-- [ ] 实现规范化、裁切、缩放、透明度、`overlay` 和转场图编译，使用本机 FFmpeg 支持的明确枚举。视频源音频按独立音轨规则处理，最终音频继续使用既有混音管线，字幕在相同时间基准上合成。
-- [ ] 实现本机视频导入、预览任务与队列取消/租约处理。增加恶意媒体、无视频流、上传中断及临时文件清理测试。预览缓存固定工程、帧区间、合成指纹和输出规格。
-- [ ] 完成轨道新增、素材拖入、排序、裁切、画幅参数、转场预览和批准 UI。`CompositionPreview` 显示真实 Worker 预览，工程切换或修订改变时标记已有预览来源。
-- [ ] 执行媒体测试、前端合成测试及浏览器操作，保存 ffprobe、抽帧和桌面/移动截图证据后精确提交。
+- [x] 添加失败媒体测试 `test_pip_pixels_and_end_frame` 和 `test_transition_frames_are_blended`。使用红/蓝测试视频检查画中画内外像素与结束后的画面，检查转场中间帧及 84 帧输出。视频源有不同帧率时验证统一帧率、裁切和时间戳。
+- [x] 执行定向媒体测试，确认真实输出缺少对应效果时失败。
+- [x] 实现规范化、裁切、缩放、透明度、`overlay` 和转场图编译，使用本机 FFmpeg 支持的明确枚举。视频源音频按独立音轨规则处理，最终音频继续使用既有混音管线，字幕在相同时间基准上合成。
+- [x] 实现本机视频导入、预览任务与队列取消/租约处理。增加恶意媒体、无视频流、上传中断及临时文件清理测试。预览缓存固定工程、帧区间、合成指纹和输出规格。
+- [x] 完成轨道新增、素材拖入、排序、裁切、画幅参数、转场预览和批准 UI。`CompositionPreview` 显示真实 Worker 预览，工程切换或修订改变时标记已有预览来源。
+- [x] 执行媒体测试、前端合成测试及浏览器操作，保存 ffprobe、抽帧和桌面/移动截图证据后精确提交。
 
 FFmpeg 的 overlay、xfade 和时间基准约束作为编译器依据。可用滤镜在启动诊断中检测。[FFmpeg 滤镜文档](https://ffmpeg.org/ffmpeg-filters.html)
 
@@ -112,4 +112,5 @@ FFmpeg 的 overlay、xfade 和时间基准约束作为编译器依据。可用�
 - [ ] 执行完整后端、Ruff、前端 lint/Vitest/build 和 Playwright，保存环境与日志。更新 README、API、PROGRESS 与 `.ai/`，完成 M2 后精确提交。
 
 规划阶段已在本机原生 OTIO 0.18.1 做最小验证。两个完整 48 帧 Clip 插入 12 帧 Transition 后 Track 仍为 96 帧，按上述 handles 规则裁切名义范围后为 84 帧，因此导出任务包含显式的时长映射测试。[OTIO Transition 定义](https://opentimelineio.readthedocs.io/en/latest/tutorials/otio-serialized-schema.html)
+
 

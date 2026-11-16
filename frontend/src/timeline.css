@@ -192,3 +192,88 @@
     font-size: 10px;
   }
 }
+.composition-import {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border, #34343b);
+  border-radius: 8px;
+}
+.composition-import label {
+  min-width: 0;
+}
+.composition-import input[type="file"] {
+  width: 100%;
+  min-width: 0;
+}
+.video-composition {
+  display: grid;
+  gap: 16px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border, #34343b);
+}
+.video-composition h2,
+.video-composition h3 {
+  margin: 0;
+}
+.composition-actions,
+.composition-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+.composition-fields label {
+  display: grid;
+  gap: 6px;
+  min-width: 100px;
+  flex: 1 1 130px;
+}
+.composition-fields .check {
+  display: flex;
+  align-items: center;
+}
+.video-composition label.check {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.video-composition label.check input {
+  width: auto;
+  flex: 0 0 auto;
+}
+.composition-fields input,
+.composition-fields select {
+  width: 100%;
+  min-width: 0;
+}
+.composition-fields input[type="checkbox"] {
+  width: auto;
+}
+.video-layer-track {
+  min-width: 0;
+  border: 1px solid var(--border, #34343b);
+  border-radius: 8px;
+  padding: 14px;
+}
+.video-layer-clip,
+.composition-preview,
+.composition-transitions {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+.video-layer-clip summary {
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+.composition-preview video {
+  width: 100%;
+  max-height: 380px;
+  background: #09090b;
+}
+.composition-plan {
+  border-left: 2px solid #b8acf2;
+  padding-left: 12px;
+}

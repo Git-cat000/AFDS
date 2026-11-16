@@ -867,12 +867,16 @@ export function App() {
                 <div>
                   <Layers size={16} />
                   <h2>时间轴</h2>
-                  <span className="muted">V1 · 单轨视频</span>
+                  <span className="muted">
+                    主轨 · {1 + (apr.timeline.video_layers?.length || 0)}{" "}
+                    条视频轨
+                  </span>
                 </div>
                 <strong>
                   {framesToTime(
                     apr.timeline.tracks[0].items.reduce(
-                      (n, i) => n + i.duration_frames,
+                      (end, item) =>
+                        Math.max(end, item.start_frame + item.duration_frames),
                       0,
                     ),
                     apr.format,
