@@ -275,3 +275,32 @@ Final publication rechecks lease owner, attempt, expiry, cancellation and destin
 Status is `ok` or `degraded`, deployment is `local_single_user`. Worker status is `online`, `offline` or `unknown`, with online count and last-seen age; idle pulses every 5 seconds, active lease heartbeats also pulse, stale after 15 seconds. Missing dependencies and unavailable data are reported explicitly. Responses exclude filesystem paths, owner IDs, prompts, credentials and raw upstream errors; diagnostics make no external calls.
 
 Project counts cover all jobs; elapsed p50/p95 use the most recent 200 jobs with elapsed measurements. Graph nodes cover up to 50 recent jobs and 100 input media, with explicit `truncated`. `media` edges connect observed producers/consumers or existing media; `dependency` edges reflect declared dependencies. `relationship=observed_media_lineage` does not imply queue blockage. Media totals count registered owned files, not a full storage scan. Routes are read-only and follow the existing local project ownership boundary.
+
+## Production skills and approved local scripts
+
+App0.7.0 uses APR0.4.0 and migration0007. Legacy APR0.1/0.2/0.3 inputs load with empty production guidance. Stage identifiers are story, continuity, shots, image, video, audio, editing, review and delivery.
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/skills?stage=shots&offset=0&limit=50` | Stage metadata and bounded package summaries |
+| POST | `/skills/import` | JSON files with path/content_base64, stages and optional source |
+| POST | `/skills/import-zip?stages=story,shots&source=example` | Bounded raw ZIP with one skill root |
+| GET | `/skills/{digest}` | Instructions, metadata and resource/script inventory |
+| GET | `/skills/{digest}/resource?path=references/guide.md` | Original resource bytes, plain-text content type and nosniff |
+| POST | `/projects/{pid}/skills/guidance/preview` | Preview pinned selected guidance without changing APR |
+| POST | `/projects/{pid}/skills/guidance/commit` | Approved Engine transaction with base_revision |
+| POST | `/projects/{pid}/skills/checks` | Enqueue a registered deterministic stage check |
+| POST | `/projects/{pid}/skills/scripts/preview` | Inspect exact source, runtime, arguments, context and fingerprint |
+| POST | `/projects/{pid}/skills/scripts/{plan_id}/execute` | Approve that exact preview and enqueue one script job |
+| GET | `/projects/{pid}/skills/runs?stage=story&offset=0&limit=20` | Owned bounded check/script history and result metadata |
+| GET | `/projects/{pid}/skills/runs/{job_id}/files/{artifact_id}` | Owned, hash-verified output download |
+
+Guidance selection requests contain base_revision and selections, with stage keys mapping to up to three objects containing package_id and resources. Commit additionally requires approved=true. Each snapshot stores name, version, instructions, explicit text resources and original package identity. Guidance changes configure future requests while preserving selected existing media. Compiled guidance enters model requests and generation fingerprints. Snapshots survive APR import and portable restore, and matching executable packages can be reimported by digest.
+
+Script preview accepts base_revision, package_id, script_path, stage, arguments, timeout_seconds and optional shot_ids. Arguments are literal string arrays and retain whitespace. The preview returns a plan ID, source_code, runtime availability and fingerprint. Execution requires base_revision, approved=true and the same fingerprint. The proposal is immutable. Repeated approval returns its original job, including after completion. Changed source, parameters or a new run require another preview and approval.
+
+Scripts execute with the current local user's filesystem and network permissions. The inherited environment contains essential system variables and AFDS_CONTEXT_FILE. Context JSON is also available through stdin and input.json. The selected skill's ordinary files are present in its working directory. Root input.json and outputs/ are runtime protocol names. Results from outputs/ are copied to immutable, project-owned storage. Child-process lifecycle controls, explicit timeouts and lease fencing apply. External service costs are script-managed and recorded as unknown, while the AFDS cost ledger covers registered model requests.
+
+Script timeout is5–300seconds. Source review supports scripts up to256KiB. Context is bounded512KiB with explicit scope truncation metadata. Logs retain64KiB per stream and terminate at1MiB per stream. Output artifacts allow32files,8MiB per file and32MiB total. Runtime errors retain bounded diagnostics. Recognized credential patterns are redacted from logs and rejected in imported resources, saved arguments and artifact files. Cancellation and crash recovery retain ownership checks. A launch lost with its Worker reports SCRIPT_RUN_UNCERTAIN, and normal job retry reports SCRIPT_APPROVAL_REQUIRED for external scripts.
+
+Import limits are16MiB ZIP,32MiB unpacked,256members and8MiB per resource. YAML uses safe loading. Directory metadata is checked before ZIP allocation, and paths, links, reserved names, collisions and credential directories are validated. The runtime library lives in local data, while authored builtins are packaged source resources. See [the production skill guide](SKILLS.md) for the portable package format and script contract.

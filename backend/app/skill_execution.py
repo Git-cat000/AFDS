@@ -52,6 +52,41 @@ def script_context(apr, stage, identifiers):
             value for value in apr.get("world_states", []) if value.get("scene_id") in scene_ids
         ][:100],
     )
+    timeline = copy.deepcopy(apr["timeline"])
+    timeline_truncated = len(timeline["tracks"]) > 20
+    timeline["tracks"] = timeline["tracks"][:20]
+    for track in timeline["tracks"]:
+        timeline_truncated |= len(track["items"]) > 100
+        track["items"] = track["items"][:100]
+    for field in ("captions", "markers"):
+        timeline_truncated |= len(timeline.get(field, [])) > 100
+        timeline[field] = timeline.get(field, [])[:100]
+    versions = {value["id"]: value for value in apr["asset_versions"]}
+    active_versions = [
+        versions[shot["active_asset_version_id"]]
+        for shot in chosen
+        if shot["active_asset_version_id"] in versions
+    ]
+    project.update(
+        timeline=timeline,
+        asset_versions=active_versions,
+        assets=[
+            {
+                key: value[key]
+                for key in (
+                    "id",
+                    "sha256",
+                    "media_type",
+                    "duration_frames",
+                    "duration_seconds",
+                    "sample_rate",
+                    "channels",
+                )
+                if key in value
+            }
+            for value in apr["assets"][:200]
+        ],
+    )
     context = add_guidance(
         {
             "stage": stage,
@@ -60,6 +95,8 @@ def script_context(apr, stage, identifiers):
                 "requested_shot_ids": list(map(str, identifiers)),
                 "total_active_shots": len(shots),
                 "truncated": len(chosen) < len(shots),
+                "timeline_truncated": timeline_truncated,
+                "assets_truncated": len(apr["assets"]) > 200,
             },
         },
         apr,
@@ -399,6 +436,11 @@ class SkillExecution:
             items = []
             for row in rows:
                 job = public_job(serialize(row))
+                job["request"] = {
+                    key: value
+                    for key, value in job["request"].items()
+                    if key in {"stage", "skill_name", "script_path", "package_id"}
+                }
                 if job.get("skill_result"):
                     job["skill_result"]["stale"] = header["revision"] != job["source_revision"]
                 items.append(job)

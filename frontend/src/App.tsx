@@ -1,10 +1,17 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  BookOpen,
   Check,
   Clapperboard,
   Download,
@@ -40,6 +47,8 @@ import { ReviewPanel } from "./ReviewPanel";
 import { TimelineEditor } from "./TimelineEditor";
 import { BackupRestorePanel } from "./BackupRestorePanel";
 import { OperationsDashboard } from "./OperationsDashboard";
+import { SkillStagePanel } from "./SkillStagePanel";
+import type { ProductionStage } from "./skill-types";
 import type {
   ChangeSet,
   Plan,
@@ -58,6 +67,12 @@ function Status({ state }: { state: string }) {
     </span>
   );
 }
+
+const ProductionSkills = lazy(() =>
+  import("./ProductionSkills").then((module) => ({
+    default: module.ProductionSkills,
+  })),
+);
 
 function Modal({
   title,
@@ -109,6 +124,8 @@ export function App() {
   const [previewAsset, setPreviewAsset] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [skillsStage, setSkillsStage] = useState<ProductionStage>("story");
   const [message, setMessage] = useState("用四个镜头，讲述这个故事。");
   const [llmChoice, setLlmChoice] = useState<string | null>(null);
   const [videoChoice, setVideoChoice] = useState<string | null>(null);
@@ -188,12 +205,18 @@ export function App() {
     setError("");
     setEditing(null);
     setHistoryOpen(false);
+    setSkillsOpen(false);
     setTab("storyboard");
     setSelectedShotId("");
     setStoryboardDrafts({});
     setReferenceAssignment(null);
     setTimelineAudioId("");
     setRemoteConsent(false);
+  }
+
+  function openSkills(stage: ProductionStage) {
+    setSkillsStage(stage);
+    setSkillsOpen(true);
   }
 
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -341,6 +364,13 @@ export function App() {
         >
           <Settings2 size={18} />
           模型与工具
+        </button>
+        <button
+          className={`nav ${skillsOpen ? "active" : ""}`}
+          onClick={() => setSkillsOpen(true)}
+        >
+          <BookOpen size={18} />
+          技能与脚本
         </button>
         <div className="rail-bottom">
           <span className="online-dot" />
@@ -590,6 +620,14 @@ export function App() {
             )}
             <section className="studio-layout">
               <WorkbenchToolbar activeTool={activeTool} select={setTab} />
+              <SkillStagePanel
+                project={apr}
+                tool={activeTool}
+                shotId={selectedShot?.id}
+                busy={busy}
+                run={run}
+                open={openSkills}
+              />
               <CreationWorkspace
                 key={apr.project_id}
                 project={apr}
@@ -931,6 +969,20 @@ export function App() {
           </>
         )}
       </main>
+      {skillsOpen && (
+        <Modal title="制作技能与脚本" close={() => setSkillsOpen(false)}>
+          <Suspense fallback={<p role="status">正在载入制作技能…</p>}>
+            <ProductionSkills
+              key={apr?.project_id || "library"}
+              project={apr}
+              initialStage={skillsStage}
+              shotId={selectedShot?.id}
+              busy={busy}
+              run={run}
+            />
+          </Suspense>
+        </Modal>
+      )}
       {editing && apr && (
         <ShotEditor
           key={editing.id}

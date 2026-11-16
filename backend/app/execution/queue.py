@@ -192,6 +192,9 @@ class Queue:
                     "amount": config["request_cost"],
                     "currency": config.get("cost_currency", "USD"),
                 }
+        if operation == "run_skill_script":
+            unknown = {"status": "unknown", "amount": None, "currency": None}
+            payload.update(estimated_cost=unknown, actual_cost=unknown)
         jid = new_id()
         if request.get("provider_config"):
             from app.budget import BudgetService
@@ -511,7 +514,7 @@ class Queue:
                         "failed",
                         error={
                             "code": "SCRIPT_RUN_UNCERTAIN",
-                            "message": "A script launch lost its worker. Review and approve a new run",
+                            "message": "Worker lost after launch. Review and approve a new run",
                         },
                     )
                 elif job["attempt"] >= job["max_attempts"]:

@@ -73,6 +73,7 @@ def test_manual_approval_runs_exact_script_once_and_preserves_literal_arguments(
     Worker(client.app.state.database).run_once()
     result = read_job(client, apr, job)
     assert result["state"] == "completed", result
+    assert result["actual_cost"]["status"] == "unknown"
     output = json.loads(result["skill_result"]["stdout"])
     assert output == {
         "stage": "shots",

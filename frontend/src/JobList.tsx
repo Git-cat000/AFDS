@@ -29,6 +29,9 @@ function JobDetail({ job, projectId }: { job: Job; projectId: string }) {
           {detail.data?.cleanup_result && (
             <pre>{JSON.stringify(detail.data.cleanup_result, null, 2)}</pre>
           )}
+          {detail.data?.skill_result && (
+            <pre>{JSON.stringify(detail.data.skill_result, null, 2)}</pre>
+          )}
           <small>输入哈希 {job.input_summary?.request_hash}</small>
         </>
       )}

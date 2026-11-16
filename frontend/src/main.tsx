@@ -5,6 +5,7 @@ import { App } from "./App";
 import "./style.css";
 import "./workspace.css";
 import "./material-canvas.css";
+import "./skills.css";
 
 const client = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true } },

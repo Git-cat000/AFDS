@@ -1,3 +1,9 @@
+import type {
+  GuidanceSnapshot,
+  ProductionStage,
+  SkillResult,
+} from "./skill-types";
+
 export type Format = {
   fps_num: number;
   fps_den: number;
@@ -62,6 +68,7 @@ export type AssetVersion = {
   generated_by_job_id: string;
 };
 export type Project = {
+  production_guidance?: Partial<Record<ProductionStage, GuidanceSnapshot[]>>;
   project_id: string;
   title: string;
   brief: string;
@@ -170,6 +177,8 @@ export type Job = {
   protocol?: string;
   result_plan_id?: string;
   cleanup_result?: Record<string, unknown>;
+  source_revision?: number;
+  skill_result?: SkillResult;
   input_summary: { request_hash: string };
   external_task_id?: string | null;
   remote_notice?: string;

@@ -20,7 +20,7 @@ def test_diagnostics_truthfully_tracks_idle_active_and_stale_worker(client):
     assert not worker.run_once()
     status = client.get("/api/v1/system/status").json()
     assert status["worker"]["online_count"] == 1
-    assert status["database"]["schema_version"] == "0006"
+    assert status["database"]["schema_version"] == "0007"
     assert status["storage"]["free_bytes"] > 0
     assert all(value == "available" for value in status["tools"].values())
     assert str(database.settings.data_dir) not in json.dumps(status)
