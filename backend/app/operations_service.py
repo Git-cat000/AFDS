@@ -34,6 +34,10 @@ OPERATIONS = {
     "cleanup_storage",
     "check_production",
     "run_skill_script",
+    "import_video",
+    "render_preview",
+    "analyze_beats",
+    "transcribe_audio",
 }
 
 

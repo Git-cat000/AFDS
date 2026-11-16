@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AudioLines, Plus, Subtitles, Upload, VolumeX } from "lucide-react";
 import { api, mediaUrl } from "./api";
 import { VideoCompositionEditor } from "./VideoCompositionEditor";
+import { AudioAnalysisPanel } from "./AudioAnalysisPanel";
 import type { VideoLayerTrack, VideoTransition } from "./types";
 import "./timeline.css";
 
@@ -78,19 +79,51 @@ type TimingPlan = {
   protected_shot_ids: string[];
 };
 
-export function TimelineEditor({
-  project,
-  run,
-  busy,
-  initialAudioAssetId,
-  initialShotId,
-}: {
+type TimelineEditorProps = {
   project: EditorProject;
   run: (action: () => Promise<unknown>) => Promise<void>;
   busy: boolean;
   initialAudioAssetId?: string;
   initialShotId?: string;
-}) {
+};
+
+export function TimelineEditor(props: TimelineEditorProps) {
+  const [analysisOpen, setAnalysisOpen] = useState(false);
+  return (
+    <section className="timeline-editor" aria-label="音频与字幕时间轴">
+      <VideoCompositionEditor
+        project={props.project}
+        run={props.run}
+        busy={props.busy}
+      />
+      <button
+        aria-expanded={analysisOpen}
+        onClick={() => setAnalysisOpen((open) => !open)}
+      >
+        节拍与语音分析
+      </button>
+      {analysisOpen && (
+        <AudioAnalysisPanel
+          project={props.project}
+          run={props.run}
+          busy={props.busy}
+        />
+      )}
+      <TimelineAudioEditor
+        key={`${props.project.revision}:${props.initialAudioAssetId}:${props.initialShotId}`}
+        {...props}
+      />
+    </section>
+  );
+}
+
+function TimelineAudioEditor({
+  project,
+  run,
+  busy,
+  initialAudioAssetId,
+  initialShotId,
+}: TimelineEditorProps) {
   const timeline = project.timeline as Composition;
   const audioTracks = timeline.tracks.filter(
     (track): track is AudioTrack => track.type === "audio",
@@ -174,13 +207,7 @@ export function TimelineEditor({
   }
 
   return (
-    <section className="timeline-editor" aria-label="音频与字幕时间轴">
-      <VideoCompositionEditor
-        key={project.project_id}
-        project={project}
-        run={run}
-        busy={busy}
-      />
+    <section className="timeline-editor" aria-label="音频与字幕编辑器">
       <div className="timeline-heading">
         <div>
           <h2>音频与字幕</h2>
@@ -790,7 +817,7 @@ export function TimelineEditor({
           </label>
         </div>
         <div className="timeline-boundaries">
-          {videoItems.slice(0, -1).map((item) => (
+          {videoItems.slice(0, -1).map((item, index) => (
             <label className="check-label" key={item.shot_id}>
               <input
                 type="checkbox"
@@ -805,7 +832,7 @@ export function TimelineEditor({
                 }}
               />
               {shotName(item.shot_id)} 之后 ·{" "}
-              {item.start_frame + item.duration_frames} 帧
+              {videoItems[index + 1].start_frame} 帧
             </label>
           ))}
         </div>

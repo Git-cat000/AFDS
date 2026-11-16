@@ -87,12 +87,12 @@ FFmpeg 的 overlay、xfade 和时间基准约束作为编译器依据。可用�
 - `AnalysisService.enqueue(project_id, body) -> dict` 创建 `analyze_beats` 或 `transcribe_audio` 任务。结果保存在有界任务记录及归属正确的结果文件。
 - `AnalysisService.preview_apply(project_id, job_id, body) -> dict` 和 `commit_apply(project_id, job_id, body) -> dict` 固定结果哈希、APR 修订和人工选项，将候选写入 markers 或 captions。
 
-- [ ] 添加失败测试 `test_click_track_frames_within_one_frame`、`test_silence_has_no_beats`、`test_transcription_preserves_manual_captions`。120 BPM 合成点击音轨在已知起点下，节拍误差至多一帧。丢失时间戳、倒序/越界分段及结果超过 500 条待用字幕时提供明确错误或要求缩小范围。
-- [ ] 执行 `test_audio_analysis.py` 和 `test_transcription_contracts.py`，记录缺失能力导致的失败。
-- [ ] 实现本机节拍 Worker 分支及来源信息。转写复用连接的加密保存、请求授权、预算预留、超时、已提交请求不确定状态和错误映射。服务返回的实际响应先验证再形成候选。
-- [ ] 在音频面板提供分析范围、语言、转写连接和候选预览。字幕写入默认新增用户选定区域的候选，替换手工字幕时列出具体条目并由用户批准，409 时保留草稿。
-- [ ] 使用本机契约服务验证上传、模型参数、时间戳、费用和失败恢复，再运行真实浏览器审批流程。真实转写质量在用户配置并授权服务后另行验收。
-- [ ] 更新 Provider/分析 API 与使用说明，精确提交 A3 文件。
+- [x] 添加失败测试 `test_click_track_frames_within_one_frame`、`test_silence_has_no_beats`、`test_transcription_preserves_manual_captions`。120 BPM 合成点击音轨在已知起点下，节拍误差至多一帧。丢失时间戳、倒序/越界分段及结果超过 500 条待用字幕时提供明确错误或要求缩小范围。
+- [x] 执行 `test_audio_analysis.py` 和 `test_transcription_contracts.py`，记录缺失能力导致的失败。
+- [x] 实现本机节拍 Worker 分支及来源信息。转写复用连接的加密保存、请求授权、预算预留、超时、已提交请求不确定状态和错误映射。服务返回的实际响应先验证再形成候选。
+- [x] 在音频面板提供分析范围、语言、转写连接和候选预览。字幕写入默认新增用户选定区域的候选，替换手工字幕时列出具体条目并由用户批准，409 时保留草稿。
+- [x] 使用本机契约服务验证上传、模型参数、时间戳、费用和失败恢复，再运行真实浏览器审批流程。真实转写质量在用户配置并授权服务后另行验收。
+- [x] 更新 Provider/分析 API 与使用说明，精确提交 A3 文件。
 
 转写格式与时间戳支持由具体模型能力决定，协议适配器通过配置和响应验证表达该能力。[文件转写文档](https://developers.openai.com/api/docs/guides/speech-to-text)
 
@@ -112,5 +112,3 @@ FFmpeg 的 overlay、xfade 和时间基准约束作为编译器依据。可用�
 - [ ] 执行完整后端、Ruff、前端 lint/Vitest/build 和 Playwright，保存环境与日志。更新 README、API、PROGRESS 与 `.ai/`，完成 M2 后精确提交。
 
 规划阶段已在本机原生 OTIO 0.18.1 做最小验证。两个完整 48 帧 Clip 插入 12 帧 Transition 后 Track 仍为 96 帧，按上述 handles 规则裁切名义范围后为 84 帧，因此导出任务包含显式的时长映射测试。[OTIO Transition 定义](https://opentimelineio.readthedocs.io/en/latest/tutorials/otio-serialized-schema.html)
-
-

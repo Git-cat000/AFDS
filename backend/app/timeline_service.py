@@ -243,8 +243,17 @@ def preview_anchors(apr: dict, body: AnchorRequest) -> dict:
     timeline = TimelineData.model_validate(apr["timeline"])
     items = timeline.tracks[0].items
     shots = {str(s["id"]): s for s in apr["shots"]}
-    total = sum(i.duration_frames for i in items)
-    boundaries = [0] + [i.start_frame + i.duration_frames for i in items]
+    from app.composition import backbone_duration, transition_overlaps
+
+    total = backbone_duration(apr["timeline"])
+    overlaps = transition_overlaps(timeline)
+    incoming = [overlaps.get(str(item.id), 0) for item in items]
+    outgoing = incoming[1:] + [0] if items else []
+    minimums = [
+        max(1, 2 * max(before, after), before + after)
+        for before, after in zip(incoming, outgoing, strict=True)
+    ]
+    boundaries = [item.start_frame for item in items] + [total]
     wanted = [str(x) for x in body.boundary_shot_ids]
     available = {str(i.shot_id): n + 1 for n, i in enumerate(items[:-1])}
     if len(set(wanted)) != len(wanted) or any(sid not in available for sid in wanted):
@@ -284,9 +293,10 @@ def preview_anchors(apr: dict, body: AnchorRequest) -> dict:
         valid = [
             a
             for a in anchors
-            if boundaries[position - 1] < a < boundaries[position + 1]
-            and a - boundaries[position - 1] <= 1800
-            and boundaries[position + 1] - a <= 1800
+            if minimums[position - 1]
+            <= a - boundaries[position - 1] + outgoing[position - 1]
+            <= 1800
+            and minimums[position] <= boundaries[position + 1] - a + outgoing[position] <= 1800
         ]
         if not valid:
             continue
@@ -297,7 +307,7 @@ def preview_anchors(apr: dict, body: AnchorRequest) -> dict:
             snapped.append({"shot_id": sid, "before_frame": before, "after_frame": after})
     changes = []
     for n, item in enumerate(items):
-        duration = boundaries[n + 1] - boundaries[n]
+        duration = boundaries[n + 1] - boundaries[n] + outgoing[n]
         if duration != item.duration_frames:
             changes.append(
                 {"shot_id": str(item.shot_id), "before": item.duration_frames, "after": duration}

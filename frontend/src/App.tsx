@@ -761,7 +761,7 @@ export function App() {
                       )}
                       {activeTool === "timeline" && (
                         <TimelineEditor
-                          key={`${apr.project_id}:${apr.revision}:${timelineAudioId}:${selectedShot?.id || ""}`}
+                          key={apr.project_id}
                           initialAudioAssetId={timelineAudioId}
                           initialShotId={selectedShot?.id}
                           project={apr}

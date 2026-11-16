@@ -16,21 +16,23 @@ from app.comfy_schema import WorkflowTemplate
 from app.errors import DomainError
 from app.schemas import Schema
 
-ProviderKind = Literal["llm", "video", "image", "speech"]
-KINDS = ("llm", "video", "image", "speech")
+ProviderKind = Literal["llm", "video", "image", "speech", "transcription"]
+KINDS = ("llm", "video", "image", "speech", "transcription")
 DEFAULTS = {
     "llm": "mock-director",
     "video": "mock-video-local",
     "image": "openai-image",
     "speech": "openai-speech",
+    "transcription": "openai-transcription",
 }
 CAPABILITIES = {
     "llm": "storyboard",
     "video": "text_to_video",
     "image": "text_to_image",
     "speech": "text_to_speech",
+    "transcription": "transcription",
 }
-NAMES = {"llm": "LLM", "video": "视频", "image": "图像", "speech": "语音"}
+NAMES = {"llm": "LLM", "video": "视频", "image": "图像", "speech": "语音", "transcription": "转写"}
 
 
 def validate_url(value, allow_private=False):
@@ -79,6 +81,7 @@ class ProviderConfig(Schema):
     timeout_seconds: int = Field(default=60, ge=5, le=180)
     json_mode: bool = True
     vision_enabled: bool = False
+    transcription_timestamps: bool = False
     video_seconds: int = Field(default=8, ge=1, le=30)
     video_size: str = Field(default="1280x720", pattern=r"^\d{2,4}x\d{2,4}$")
     video_poll_seconds: int = Field(default=3, ge=1, le=30)
@@ -111,6 +114,7 @@ class DefaultUpdate(Schema):
     video: str | None = None
     image: str | None = None
     speech: str | None = None
+    transcription: str | None = None
 
 
 class ProviderStore:

@@ -224,9 +224,11 @@ export type Provider = {
   model_id?: string;
 };
 
-export type ProviderKind = "llm" | "video" | "image" | "speech";
+export type ProviderKind =
+  "llm" | "video" | "image" | "speech" | "transcription";
 export type Connection = {
   vision_enabled?: boolean;
+  transcription_timestamps?: boolean;
   kind: ProviderKind;
   provider_id: string;
   display_name: string;

@@ -59,7 +59,15 @@ class Worker:
             def checkpoint():
                 return self.queue.heartbeat(job["id"], self.owner)
 
-            if job["operation"] in {"check_production", "run_skill_script"}:
+            if job["operation"] in {"analyze_beats", "transcribe_audio"}:
+                from app.analysis_service import AnalysisService
+                from app.remote_media import remote_lease
+
+                with remote_lease(self.queue, job, self.owner) as analysis_checkpoint:
+                    result = AnalysisService(self.database).execute(
+                        job, self.owner, work, analysis_checkpoint
+                    )
+            elif job["operation"] in {"check_production", "run_skill_script"}:
                 from app.skill_execution import SkillExecution
 
                 result = SkillExecution(self.database).execute(job, self.owner, work, checkpoint)
@@ -162,7 +170,11 @@ class Worker:
                     )
                     result["video"] = preview_output
             elapsed_ms = int((time.monotonic() - started) * 1000)
-            if job["operation"] in {"check_production", "run_skill_script"}:
+            if job["operation"] in {"analyze_beats", "transcribe_audio"}:
+                from app.analysis_service import AnalysisService
+
+                AnalysisService(self.database).publish(job, self.owner, result, elapsed_ms)
+            elif job["operation"] in {"check_production", "run_skill_script"}:
                 from app.skill_execution import SkillExecution
 
                 SkillExecution(self.database).publish(job, self.owner, result, elapsed_ms)

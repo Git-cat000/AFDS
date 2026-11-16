@@ -14,6 +14,65 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it("saves a timestamp-capable transcription connection from URL key and model fields", async () => {
+  const profile = {
+    kind: "transcription",
+    provider_id: "openai-transcription",
+    revision: 0,
+    base_url: "https://provider.example/v1",
+    model: "compatible-asr",
+    enabled: false,
+    timeout_seconds: 60,
+    transcription_timestamps: false,
+  };
+  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(
+    async (_url, options) =>
+      new Response(
+        JSON.stringify(
+          options?.method === "PUT"
+            ? { ...profile, ...JSON.parse(String(options.body)), revision: 1 }
+            : {
+                providers: [profile],
+                defaults: { transcription: "openai-transcription" },
+              },
+        ),
+        { status: 200 },
+      ),
+  );
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <ProviderSettings />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByRole("tab", { name: "语音转写" }));
+  await screen.findByLabelText("服务 URL");
+  fireEvent.change(screen.getByLabelText("API Key"), {
+    target: { value: "test-only-credential" },
+  });
+  fireEvent.click(screen.getByText("高级选项", { exact: true }));
+  fireEvent.click(
+    screen.getByLabelText("此转写模型支持 verbose_json 分段时间戳"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+  await waitFor(() =>
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(
+      true,
+    ),
+  );
+  const call = fetcher.mock.calls.find(([, init]) => init?.method === "PUT")!;
+  expect(String(call[0])).toContain("/settings/providers/transcription");
+  expect(JSON.parse(String(call[1]?.body))).toMatchObject({
+    base_url: profile.base_url,
+    model: profile.model,
+    api_key: "test-only-credential",
+    transcription_timestamps: true,
+  });
+});
+
 it("offers ComfyUI workflow mappings and preserves protocol and cost settings on save", async () => {
   const profile = {
     kind: "image",

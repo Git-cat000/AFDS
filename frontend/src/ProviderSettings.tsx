@@ -46,6 +46,13 @@ const categories = [
     icon: AudioLines,
     path: "/audio/speech",
   },
+  {
+    kind: "transcription" as const,
+    label: "语音转写",
+    role: "带时间戳的字幕候选",
+    icon: AudioLines,
+    path: "/audio/transcriptions",
+  },
 ];
 
 export function ProviderSettings() {
@@ -216,6 +223,7 @@ function ConnectionForm({
       timeout_seconds: draft.timeout_seconds,
       json_mode: draft.json_mode,
       vision_enabled: draft.vision_enabled || false,
+      transcription_timestamps: draft.transcription_timestamps || false,
       video_seconds: draft.video_seconds,
       video_size: draft.video_size,
       video_poll_seconds: draft.video_poll_seconds,
@@ -491,6 +499,18 @@ function ConnectionForm({
               </label>
             )}
           </div>
+          {profile.kind === "transcription" && (
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={draft.transcription_timestamps || false}
+                onChange={(event) =>
+                  patch("transcription_timestamps", event.target.checked)
+                }
+              />
+              此转写模型支持 verbose_json 分段时间戳
+            </label>
+          )}
           {profile.kind === "llm" && (
             <label className="check-label">
               <input

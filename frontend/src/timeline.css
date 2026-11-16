@@ -277,3 +277,10 @@
   border-left: 2px solid #b8acf2;
   padding-left: 12px;
 }
+.analysis-candidates {
+  display: grid;
+  gap: 8px;
+  max-height: 340px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}

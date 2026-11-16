@@ -21,7 +21,7 @@ def test_provider_settings_persist_without_exposing_credentials(client):
     assert saved["revision"] == 1
     assert "test-only-credential" not in response.text
     settings = client.get("/api/v1/settings/models").json()
-    assert len(settings["providers"]) == 4
+    assert len(settings["providers"]) == 5
     assert settings["defaults"]["llm"] == "mock-director"
     assert "test-only-credential" not in str(settings)
     path = client.app.state.settings.database_url.removeprefix("sqlite:///")

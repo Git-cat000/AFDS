@@ -97,6 +97,7 @@ def public_job(job):
     value = copy.deepcopy(job)
     value.get("request", {}).pop("staging_path", None)
     value.get("artifact", {}).pop("relative_path", None)
+    value.get("analysis_result", {}).pop("relative_path", None)
     for artifact in value.get("skill_result", {}).get("artifacts", []):
         artifact.pop("relative_path", None)
     return value
@@ -239,6 +240,8 @@ class Queue:
             "cleanup_storage",
             "run_skill_script",
             "check_production",
+            "analyze_beats",
+            "transcribe_audio",
         }:
             return
         if job["operation"] == "export_project":

@@ -121,6 +121,9 @@ def create_app(settings: Settings | None = None):
 
     application.include_router(continuity_router, prefix="/api/v1")
     application.include_router(timeline_router, prefix="/api/v1")
+    from app.analysis_api import router as analysis_router
+
+    application.include_router(analysis_router, prefix="/api/v1")
     from app.review_api import router as review_router
 
     application.include_router(review_router, prefix="/api/v1")
