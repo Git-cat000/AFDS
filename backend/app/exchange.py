@@ -31,6 +31,9 @@ LIMITATIONS = [
     "Audio gain and mute are AFDS metadata; receiving editors must apply these values.",
     "Overlapping audio clips use parallel lanes retaining their original AFDS track ID.",
     "Standalone OTIO references media/ URIs; download the ZIP for the referenced media.",
+    "Video rectangles and opacity use versioned AFDS effect metadata; editor mapping is required.",
+    "Dissolve uses native OTIO transition handles; "
+    "black fades and wipes retain AFDS kind metadata.",
 ]
 _PRIVATE_KEYS = {
     "apikey",
@@ -228,8 +231,17 @@ def _owned_assets(database, project_id, snapshot, checkpoint):
 
 
 def _otio_document(otio, snapshot, assets):
+    from app.composition import build_composition
+
     fmt = snapshot["format"]
     rate = fmt["fps_num"] / fmt["fps_den"]
+    composition = (
+        build_composition(snapshot) if snapshot["timeline"]["tracks"][0]["items"] else None
+    )
+    total_frames = composition["total_frames"] if composition else 0
+    transitions = snapshot["timeline"].get("transitions", [])
+    incoming = {item["to_clip_id"]: item for item in transitions}
+    outgoing = {item["from_clip_id"]: item for item in transitions}
 
     def span(start, duration, fps=rate):
         return otio.opentime.TimeRange(
@@ -243,6 +255,7 @@ def _otio_document(otio, snapshot, assets):
         "project_id": snapshot["project_id"],
         "revision": snapshot["revision"],
         "format": fmt,
+        "composition_version": "0.5.0",
         "limitations": LIMITATIONS,
         "captions": snapshot["timeline"].get("captions", []),
         "markers": snapshot["timeline"].get("markers", []),
@@ -329,13 +342,18 @@ def _otio_document(otio, snapshot, assets):
                 raise DomainError("INVALID_MEDIA", "Timeline shot requires video media", 422)
             if item["start_frame"] > end:
                 track.append(otio.schema.Gap(source_range=span(0, item["start_frame"] - end)))
+            before = incoming.get(item.get("id"))
+            after = outgoing.get(item.get("id"))
+            head = before["duration_frames"] // 2 if before else 0
+            tail = after["duration_frames"] - after["duration_frames"] // 2 if after else 0
             track.append(
                 otio.schema.Clip(
                     name=shot["title"],
                     media_reference=reference(asset),
-                    source_range=span(0, item["duration_frames"]),
+                    source_range=span(head, item["duration_frames"] - head - tail),
                     metadata={
                         "AFDS": {
+                            **item,
                             "shot_id": shot["id"],
                             "asset_id": asset["id"],
                             "asset_version_id": version["id"],
@@ -346,8 +364,65 @@ def _otio_document(otio, snapshot, assets):
                     },
                 )
             )
+            if after:
+                duration = after["duration_frames"]
+                track.append(
+                    otio.schema.Transition(
+                        name=after["kind"],
+                        transition_type="SMPTE_Dissolve"
+                        if after["kind"] == "dissolve"
+                        else "Custom_Transition",
+                        in_offset=otio.opentime.RationalTime(duration // 2, rate),
+                        out_offset=otio.opentime.RationalTime(duration - duration // 2, rate),
+                        metadata={"AFDS": {**after, "schema_version": "0.5.0"}},
+                    )
+                )
             end = item["start_frame"] + item["duration_frames"]
         timeline.tracks.append(track)
+    for original in snapshot["timeline"].get("video_layers", []):
+        stack = otio.schema.Stack(name=original.get("name") or original["id"])
+        stack.enabled = not original.get("hidden", False)
+        stack.metadata["AFDS"] = {
+            "track_id": original["id"],
+            "hidden": original.get("hidden", False),
+            "schema_version": "0.5.0",
+            "source_audio_policy": "silent",
+        }
+        # Independent native lanes preserve each placement's start and coverage
+        # order, including overlapping placements within one AFDS video layer.
+        for index, item in enumerate(original["items"]):
+            lane = otio.schema.Track(
+                name=f"{stack.name} {index + 1}", kind=otio.schema.TrackKind.Video
+            )
+            lane.metadata["AFDS"] = {"track_id": original["id"], "placement_order": index}
+            if item["start_frame"]:
+                lane.append(otio.schema.Gap(source_range=span(0, item["start_frame"])))
+            asset = by_id[item["asset_id"]]
+            clip = otio.schema.Clip(
+                name=asset["id"],
+                media_reference=reference(asset),
+                source_range=span(item["source_start_frame"], item["duration_frames"]),
+                metadata={"AFDS": {**item, "sha256": asset["sha256"], "schema_version": "0.5.0"}},
+            )
+            geometry = {key: item[key] for key in ("x", "y", "width", "height", "opacity")}
+            clip.effects.append(
+                otio.schema.Effect(
+                    name="AFDS normalized rectangle",
+                    effect_name="AFDS.Transform",
+                    metadata={"AFDS": {"schema_version": "0.5.0", **geometry}},
+                )
+            )
+            lane.append(clip)
+            remaining = total_frames - item["start_frame"] - item["duration_frames"]
+            if remaining:
+                lane.append(otio.schema.Gap(source_range=span(0, remaining)))
+            stack.append(lane)
+        if not original["items"]:
+            lane = otio.schema.Track(name=stack.name, kind=otio.schema.TrackKind.Video)
+            if total_frames:
+                lane.append(otio.schema.Gap(source_range=span(0, total_frames)))
+            stack.append(lane)
+        timeline.tracks.append(stack)
     for caption in snapshot["timeline"].get("captions", []):
         timeline.tracks.markers.append(
             otio.schema.Marker(

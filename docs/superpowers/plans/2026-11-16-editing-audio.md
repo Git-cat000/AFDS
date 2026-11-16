@@ -105,10 +105,10 @@ FFmpeg 的 overlay、xfade 和时间基准约束作为编译器依据。可用�
 - 转场重叠映射时设置 `in_offset=floor(duration/2)`、`out_offset=duration-in_offset`。前片段名义范围尾部扣除 out_offset，后片段名义范围头部扣除 in_offset，并保留完整媒体 available_range 作为转场 handles。每个片段同时累计入场和出场裁切。
 - ZIP 0.3 包含新 APR、工作台快照与完整所需素材，恢复重新映射片段、镜头、素材和引用。
 
-- [ ] 添加失败测试 `test_multitrack_otio_round_trip`、`test_odd_transition_handles_keep_duration` 和 `test_restored_composition_renders_same_frames`，原生 OTIO 解析后核对层级、间隔、转场、音轨和总长。两个 48 帧片段加 12 帧转场时验证 84 帧，加 11 帧转场时验证 85 帧。缺失素材、失效选片或跨项目引用阻止出片并定位相关片段。
-- [ ] 执行新的导出恢复测试及既有 `test_exchange.py`、`test_restore.py`，记录差异。
-- [ ] 修改导出恢复、素材清单和生产检查，确保叠加轨及转场引用被纳入快照和哈希清单。时间轴中镜头失效时列出引用该镜头的相关片段。
-- [ ] 在 `advanced-editing.spec.ts` 从旧工程完成多轨、画中画、转场、节拍候选、契约服务转写、字幕批准、预览、成片及恢复再渲染。核对 H.264、AAC 48 kHz 立体声、精确帧数、抽帧效果及原生 OTIO。
-- [ ] 执行完整后端、Ruff、前端 lint/Vitest/build 和 Playwright，保存环境与日志。更新 README、API、PROGRESS 与 `.ai/`，完成 M2 后精确提交。
+- [x] 添加失败测试 `test_multitrack_otio_round_trip`、`test_odd_transition_handles_keep_duration` 和 `test_restored_composition_renders_same_frames`，原生 OTIO 解析后核对层级、间隔、转场、音轨和总长。两个 48 帧片段加 12 帧转场时验证 84 帧，加 11 帧转场时验证 85 帧。缺失素材、失效选片或跨项目引用阻止出片并定位相关片段。
+- [x] 执行新的导出恢复测试及既有 `test_exchange.py`、`test_restore.py`，记录差异。
+- [x] 修改导出恢复、素材清单和生产检查，确保叠加轨及转场引用被纳入快照和哈希清单。时间轴中镜头失效时列出引用该镜头的相关片段。
+- [x] 在 `advanced-editing.spec.ts` 从旧工程完成多轨、画中画、转场、节拍候选、契约服务转写、字幕批准、预览、成片及恢复再渲染。核对 H.264、AAC 48 kHz 立体声、精确帧数、抽帧效果及原生 OTIO。
+- [x] 执行完整后端、Ruff、前端 lint/Vitest/build 和 Playwright，保存环境与日志。更新 README、API、PROGRESS 与 `.ai/`，完成 M2 后精确提交。
 
 规划阶段已在本机原生 OTIO 0.18.1 做最小验证。两个完整 48 帧 Clip 插入 12 帧 Transition 后 Track 仍为 96 帧，按上述 handles 规则裁切名义范围后为 84 帧，因此导出任务包含显式的时长映射测试。[OTIO Transition 定义](https://opentimelineio.readthedocs.io/en/latest/tutorials/otio-serialized-schema.html)

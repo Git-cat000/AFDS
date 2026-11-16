@@ -65,6 +65,141 @@ const project = {
   },
 };
 
+it("retains a new caption draft across background revisions", async () => {
+  const fetcher = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(new Response(JSON.stringify(project)));
+  const run = async (action: () => Promise<unknown>) => {
+    await action();
+  };
+  const view = render(
+    <TimelineEditor project={project} busy={false} run={run} />,
+  );
+  fireEvent.change(screen.getByLabelText("字幕内容"), {
+    target: { value: "Unsaved caption" },
+  });
+  view.rerender(
+    <TimelineEditor
+      project={{ ...project, revision: 8 }}
+      busy={false}
+      run={run}
+    />,
+  );
+  expect((screen.getByLabelText("字幕内容") as HTMLTextAreaElement).value).toBe(
+    "Unsaved caption",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "添加字幕" }));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body)).base_revision).toBe(
+    8,
+  );
+});
+
+it("keeps an edited caption bound to its source revision after a conflict", async () => {
+  const value = {
+    ...project,
+    timeline: {
+      ...project.timeline,
+      captions: [
+        {
+          id: "caption",
+          text: "Original",
+          start_frame: 0,
+          duration_frames: 24,
+        },
+      ],
+    },
+  };
+  const fetcher = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: { code: "REVISION_CONFLICT", message: "Changed" },
+        }),
+        { status: 409 },
+      ),
+    );
+  const run = async (action: () => Promise<unknown>) => {
+    try {
+      await action();
+    } catch {
+      return;
+    }
+  };
+  const view = render(
+    <TimelineEditor project={value} busy={false} run={run} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "编辑字幕" }));
+  fireEvent.change(screen.getByLabelText("字幕内容"), {
+    target: { value: "My draft" },
+  });
+  view.rerender(
+    <TimelineEditor
+      project={{ ...value, revision: 8 }}
+      busy={false}
+      run={run}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "保存字幕" }));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body)).base_revision).toBe(
+    7,
+  );
+  expect((screen.getByLabelText("字幕内容") as HTMLTextAreaElement).value).toBe(
+    "My draft",
+  );
+});
+
+it("keeps an edited audio clip bound to its source revision", async () => {
+  const value = {
+    ...project,
+    timeline: {
+      ...project.timeline,
+      tracks: [
+        project.timeline.tracks[0],
+        {
+          ...project.timeline.tracks[1],
+          items: [
+            {
+              asset_id: "audio1",
+              start_frame: 0,
+              source_start_frame: 0,
+              duration_frames: 24,
+              gain_db: 0,
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const fetcher = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(new Response(JSON.stringify(project)));
+  const run = async (action: () => Promise<unknown>) => {
+    await action();
+  };
+  const view = render(
+    <TimelineEditor project={value} busy={false} run={run} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "编辑片段 1" }));
+  fireEvent.change(screen.getByLabelText("片段增益 dB"), {
+    target: { value: "-6" },
+  });
+  view.rerender(
+    <TimelineEditor
+      project={{ ...value, revision: 8 }}
+      busy={false}
+      run={run}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "保存音频片段" }));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body)).base_revision).toBe(
+    7,
+  );
+});
+
 it("selects the audio handed off by the media library when several assets exist", () => {
   const value = {
     ...project,

@@ -272,7 +272,9 @@ class RestoreService:
                 timeline = otio.adapters.read_from_string(
                     archive.read("timeline.otio").decode("utf-8"), adapter_name="otio_json"
                 )
-                frames = sum(i["duration_frames"] for i in apr["timeline"]["tracks"][0]["items"])
+                from app.composition import backbone_duration
+
+                frames = backbone_duration(apr["timeline"])
                 rate = apr["format"]["fps_num"] / apr["format"]["fps_den"]
                 if (
                     not isinstance(timeline, otio.schema.Timeline)
@@ -365,6 +367,17 @@ class RestoreService:
             for key in ("tracks", "captions", "markers")
             for item in apr["timeline"].get(key, [])
         ]
+        ids += [
+            item["id"]
+            for key in ("video_layers", "transitions")
+            for item in apr["timeline"].get(key, [])
+        ]
+        ids += [item["id"] for item in apr["timeline"]["tracks"][0]["items"]]
+        ids += [
+            item["id"]
+            for track in apr["timeline"].get("video_layers", [])
+            for item in track["items"]
+        ]
         if len(ids) != len(set(ids)):
             raise invalid("Entity identifiers collide")
         mapping = {key: new_id() for key in ids}
@@ -412,12 +425,21 @@ class RestoreService:
             fields(item, ("id", "source_shot_id", "target_shot_id"))
         for item in result["assets"]:
             fields(item, ("id",))
+            derived = item["provenance"].get("derived_from_asset_id")
+            if derived in mapping:
+                item["provenance"]["derived_from_asset_id"] = mapping[derived]
         for item in result["asset_versions"]:
             fields(item, ("id", "shot_id", "asset_id", "poster_asset_id"))
         for track in result["timeline"]["tracks"]:
             fields(track, ("id",))
             for item in track["items"]:
-                fields(item, ("shot_id",) if track["type"] == "video" else ("asset_id",))
+                fields(item, ("id", "shot_id") if track["type"] == "video" else ("asset_id",))
+        for track in result["timeline"].get("video_layers", []):
+            fields(track, ("id",))
+            for item in track["items"]:
+                fields(item, ("id", "asset_id", "asset_version_id"))
+        for transition in result["timeline"].get("transitions", []):
+            fields(transition, ("id", "from_clip_id", "to_clip_id"))
         for collection in ("captions", "markers"):
             for item in result["timeline"][collection]:
                 fields(item, ("id",))

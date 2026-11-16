@@ -3,6 +3,9 @@
   gap: 18px;
   min-width: 0;
 }
+.timeline-inputs {
+  display: contents;
+}
 .timeline-heading {
   display: flex;
   justify-content: space-between;

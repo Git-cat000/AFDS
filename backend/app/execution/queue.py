@@ -668,7 +668,7 @@ class Queue:
             )
             return self.get(connection, project_id, job_id)
 
-    def fail(self, job, owner, code, message, transient=False):
+    def fail(self, job, owner, code, message, transient=False, details=None):
         with self.database.transaction() as connection:
             current = self.get(connection, job["project_id"], job["id"])
             if (
@@ -684,7 +684,10 @@ class Queue:
                 return
             retry = transient and current["attempt"] < current["max_attempts"]
             target = "retry_wait" if retry else "failed"
-            self.set_state(connection, current, target, error={"code": code, "message": message})
+            error = {"code": code, "message": message}
+            if details:
+                error["details"] = details
+            self.set_state(connection, current, target, error=error)
             if retry:
                 connection.execute(
                     update(db.jobs)

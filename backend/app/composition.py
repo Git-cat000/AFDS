@@ -109,12 +109,22 @@ def build_composition(apr) -> CompositionSpec:
     items = []
     for placement in apr["timeline"]["tracks"][0]["items"]:
         shot = find(apr["shots"], placement["shot_id"])
+        location = {"clip_id": placement.get("id"), "shot_id": shot["id"]}
         if not shot["active_asset_version_id"]:
-            raise DomainError("MISSING_ASSET", "Generate every timeline shot first", 409)
-        version = find(apr["asset_versions"], shot["active_asset_version_id"])
+            raise DomainError("MISSING_ASSET", "Generate every timeline shot first", 409, location)
+        try:
+            version = find(apr["asset_versions"], shot["active_asset_version_id"])
+            asset = find(apr["assets"], version["asset_id"])
+        except DomainError as error:
+            raise DomainError(error.code, error.message, error.status, location) from error
+        if version["shot_id"] != shot["id"] or asset["media_type"] != "video":
+            raise DomainError(
+                "INVALID_MEDIA", "Select owned video media for this shot", 422, location
+            )
         if version["status"] == "stale" or shot["status"] in {"stale", "needs_review"}:
-            raise DomainError("STALE_ASSET", "Regenerate or review stale timeline shots", 409)
-        asset = find(apr["assets"], version["asset_id"])
+            raise DomainError(
+                "STALE_ASSET", "Regenerate or review stale timeline shots", 409, location
+            )
         items.append({**placement, "asset_id": asset["id"], "sha256": asset["sha256"]})
     if not items:
         raise DomainError("EMPTY_TIMELINE", "Add shots to the timeline first", 422)
@@ -128,7 +138,16 @@ def build_composition(apr) -> CompositionSpec:
             if item.get("asset_version_id"):
                 version = find(apr["asset_versions"], item["asset_version_id"])
                 if version["status"] == "stale":
-                    raise DomainError("STALE_ASSET", "Review the stale video layer version", 409)
+                    raise DomainError(
+                        "STALE_ASSET",
+                        "Review the stale video layer version",
+                        409,
+                        {
+                            "clip_id": item["id"],
+                            "track_id": track["id"],
+                            "shot_id": version["shot_id"],
+                        },
+                    )
             resolved.append({**item, "sha256": asset["sha256"], "media_type": asset["media_type"]})
         layers.append({**track, "items": resolved})
     return {

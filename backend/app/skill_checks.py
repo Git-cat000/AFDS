@@ -134,6 +134,29 @@ def check_production(apr, stage, shot_ids=()):
         record("DELIVERY_MOCK", True, "含演示标识的工程素材数量", evidence=mock)
     else:
         raise ValueError("Unknown production stage")
+    if stage in {"editing", "delivery"}:
+        from app.composition import build_composition
+        from app.errors import DomainError
+
+        try:
+            composition = build_composition(apr)
+            record(
+                "EDIT_COMPOSITION",
+                True,
+                "合成引用可解析",
+                evidence={
+                    "total_frames": composition["total_frames"],
+                    "video_layers": len(composition["video_layers"]),
+                    "transitions": len(composition["transitions"]),
+                },
+            )
+        except DomainError as error:
+            record(
+                "EDIT_COMPOSITION",
+                False,
+                "合成引用需要处理",
+                evidence={"code": error.code, **error.details},
+            )
     return {
         "kind": "check",
         "stage": stage,

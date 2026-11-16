@@ -11,6 +11,22 @@ from app.project_engine import ProjectEngine
 from app.schemas import ProjectCreate, new_id
 
 
+def test_diagnostics_reports_required_composition_filters(client):
+    data = client.get("/api/v1/system/status").json()
+    assert data["tools"]["video_composition_filters"] == "available"
+
+
+def test_missing_composition_filter_degrades_diagnostics(client, monkeypatch):
+    import app.operations_service as operations
+
+    monkeypatch.setattr(
+        operations, "composition_filter_names", lambda *args: frozenset(), raising=False
+    )
+    data = client.get("/api/v1/system/status").json()
+    assert data["tools"]["video_composition_filters"] == "unavailable"
+    assert data["status"] == "degraded"
+
+
 def test_diagnostics_truthfully_tracks_idle_active_and_stale_worker(client):
     database = client.app.state.database
     initial = client.get("/api/v1/system/status")

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AudioLines, Plus, Subtitles, Upload, VolumeX } from "lucide-react";
 import { api, mediaUrl } from "./api";
 import { VideoCompositionEditor } from "./VideoCompositionEditor";
@@ -91,28 +91,30 @@ export function TimelineEditor(props: TimelineEditorProps) {
   const [analysisOpen, setAnalysisOpen] = useState(false);
   return (
     <section className="timeline-editor" aria-label="音频与字幕时间轴">
-      <VideoCompositionEditor
-        project={props.project}
-        run={props.run}
-        busy={props.busy}
-      />
-      <button
-        aria-expanded={analysisOpen}
-        onClick={() => setAnalysisOpen((open) => !open)}
-      >
-        节拍与语音分析
-      </button>
-      {analysisOpen && (
-        <AudioAnalysisPanel
+      <fieldset className="timeline-inputs" disabled={props.busy}>
+        <VideoCompositionEditor
           project={props.project}
           run={props.run}
           busy={props.busy}
         />
-      )}
-      <TimelineAudioEditor
-        key={`${props.project.revision}:${props.initialAudioAssetId}:${props.initialShotId}`}
-        {...props}
-      />
+        <button
+          aria-expanded={analysisOpen}
+          onClick={() => setAnalysisOpen((open) => !open)}
+        >
+          节拍与语音分析
+        </button>
+        {analysisOpen && (
+          <AudioAnalysisPanel
+            project={props.project}
+            run={props.run}
+            busy={props.busy}
+          />
+        )}
+        <TimelineAudioEditor
+          key={`${props.project.project_id}:${props.initialAudioAssetId}:${props.initialShotId}`}
+          {...props}
+        />
+      </fieldset>
     </section>
   );
 }
@@ -145,6 +147,7 @@ function TimelineAudioEditor({
   const shotName = (id: string) =>
     project.shots.find((shot) => shot.id === id)?.title || "镜头";
   const [file, setFile] = useState<File | null>(null);
+  const uploadInput = useRef<HTMLInputElement>(null);
   const [rights, setRights] = useState(false);
   const [trackId, setTrackId] = useState("");
   const [assetId, setAssetId] = useState(initialAudioAssetId || "");
@@ -153,7 +156,11 @@ function TimelineAudioEditor({
   const [audioDuration, setAudioDuration] = useState(24);
   const [gain, setGain] = useState(0);
   const [editingAudio, setEditingAudio] = useState<number | null>(null);
+  const [audioEditRevision, setAudioEditRevision] = useState(project.revision);
   const [captionId, setCaptionId] = useState<string | null>(null);
+  const [captionEditRevision, setCaptionEditRevision] = useState(
+    project.revision,
+  );
   const [captionText, setCaptionText] = useState("");
   const [captionStart, setCaptionStart] = useState(initialFrame);
   const [captionDuration, setCaptionDuration] = useState(24);
@@ -181,11 +188,12 @@ function TimelineAudioEditor({
       captions: Caption[];
       markers: Marker[];
     }>,
+    baseRevision = project.revision,
   ) {
     await api(
       `/projects/${project.project_id}/timeline/composition`,
       {
-        base_revision: project.revision,
+        base_revision: baseRevision,
         audio_tracks: audioTracks,
         captions,
         markers,
@@ -197,6 +205,7 @@ function TimelineAudioEditor({
   }
 
   function editAudio(track: AudioTrack, item: AudioItem, index: number) {
+    setAudioEditRevision(project.revision);
     setTrackId(track.id);
     setAssetId(item.asset_id);
     setAudioStart(item.start_frame);
@@ -208,6 +217,12 @@ function TimelineAudioEditor({
 
   return (
     <section className="timeline-editor" aria-label="音频与字幕编辑器">
+      {((editingAudio !== null && audioEditRevision !== project.revision) ||
+        (captionId && captionEditRevision !== project.revision)) && (
+        <p role="status">
+          工程已更新，当前片段或字幕草稿保留源修订。可取消编辑后重新选择最新条目。
+        </p>
+      )}
       <div className="timeline-heading">
         <div>
           <h2>音频与字幕</h2>
@@ -302,6 +317,7 @@ function TimelineAudioEditor({
             选择音频文件
             <input
               type="file"
+              ref={uploadInput}
               accept=".wav,.mp3,.flac,.ogg,audio/wav,audio/mpeg,audio/flac,audio/ogg"
               onChange={(event) => {
                 setFile(event.target.files?.[0] || null);
@@ -344,6 +360,7 @@ function TimelineAudioEditor({
                   throw new Error(data.error?.message || "音频导入失败");
                 setRights(false);
                 setFile(null);
+                if (uploadInput.current) uploadInput.current.value = "";
               })
             }
           >
@@ -523,21 +540,24 @@ function TimelineAudioEditor({
                   duration_frames: audioDuration,
                   gain_db: gain,
                 };
-                await save({
-                  audio_tracks: audioTracks.map((track) =>
-                    track.id !== selectedTrack?.id
-                      ? track
-                      : {
-                          ...track,
-                          items:
-                            editingAudio === null
-                              ? [...track.items, item]
-                              : track.items.map((old, index) =>
-                                  index === editingAudio ? item : old,
-                                ),
-                        },
-                  ),
-                });
+                await save(
+                  {
+                    audio_tracks: audioTracks.map((track) =>
+                      track.id !== selectedTrack?.id
+                        ? track
+                        : {
+                            ...track,
+                            items:
+                              editingAudio === null
+                                ? [...track.items, item]
+                                : track.items.map((old, index) =>
+                                    index === editingAudio ? item : old,
+                                  ),
+                          },
+                    ),
+                  },
+                  editingAudio === null ? project.revision : audioEditRevision,
+                );
                 setEditingAudio(null);
               })
             }
@@ -642,13 +662,16 @@ function TimelineAudioEditor({
                     start_frame: captionStart,
                     duration_frames: captionDuration,
                   };
-                  await save({
-                    captions: captionId
-                      ? captions.map((old) =>
-                          old.id === captionId ? caption : old,
-                        )
-                      : [...captions, caption],
-                  });
+                  await save(
+                    {
+                      captions: captionId
+                        ? captions.map((old) =>
+                            old.id === captionId ? caption : old,
+                          )
+                        : [...captions, caption],
+                    },
+                    captionId ? captionEditRevision : project.revision,
+                  );
                   setCaptionId(null);
                   setCaptionText("");
                 })
@@ -656,6 +679,17 @@ function TimelineAudioEditor({
             >
               {captionId ? "保存字幕" : "添加字幕"}
             </button>
+            {captionId && (
+              <button
+                disabled={busy}
+                onClick={() => {
+                  setCaptionId(null);
+                  setCaptionText("");
+                }}
+              >
+                取消字幕编辑
+              </button>
+            )}
             <div className="timeline-item-list">
               {captions.map((caption) => (
                 <div key={caption.id}>
@@ -667,6 +701,7 @@ function TimelineAudioEditor({
                   <button
                     disabled={busy}
                     onClick={() => {
+                      setCaptionEditRevision(project.revision);
                       setCaptionId(caption.id);
                       setCaptionText(caption.text);
                       setCaptionStart(caption.start_frame);

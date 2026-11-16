@@ -202,7 +202,7 @@ Errors include `BUDGET_EXCEEDED`, `UNKNOWN_COST_BLOCKED`, `PROJECT_REMOTE_BLOCKE
 
 ## Continuity and controlled semantic edits
 
-APR schema `0.2.0` adds `world_states` and `continuity_links`, audio tracks, captions and markers. Legacy `0.1.0` APRs receive defaults. Structure import assigns new IDs to all entities, clears selected media and audio placements, and retains caption/marker timing. ZIP restore is not implemented.
+APR schema0.5 adds stable backbone clip IDs, video layers and transitions, with legacy0.1–0.4 loading. Structure import creates a new draft with remapped entities, backbone/transition identities and subtitle/marker timing. Media requires regeneration, and video-layer track design is retained with empty placements. Portable ZIP recovery preserves owned media, full composition and workspace.
 
 | Method | Path | Behavior |
 | --- | --- | --- |
@@ -259,7 +259,7 @@ Standalone OTIO uses relative media references and does not contain the referenc
 
 `POST /projects/restore?request_id=<uuid>&title=<new-copy-title>&approved=true` accepts raw ZIP bytes (`Content-Type: application/zip`), not multipart or base64. A 202 public job includes the new destination `project_id`. Keep the request UUID unchanged when retrying an uncertain upload. Identical UUID, archive SHA-256 and title return the same destination/job; different input returns 409 `RESTORE_REQUEST_CONFLICT`.
 
-The API stages at most 2 GB and atomically creates a new empty project and `restore_project` job. Only the independent Worker parses media. It accepts AFDS export format 0.2.0, verifies APR/manifest snapshot hashes, native OTIO and all owned media, and rejects traversal, links, duplicate names/JSON keys, unexpected members, missing assets and unsupported formats. Limits: 2 GB compressed and total uncompressed, 16 MB for combined metadata and for the central directory, 10,004 ZIP members. Global ZIP64 directories are rejected before allocation; per-member ZIP64 remains supported. Public responses omit staging paths.
+The API stages at most 2 GB and atomically creates a new empty project and `restore_project` job. Only the independent Worker parses media. It accepts AFDS export formats0.2.0/0.3.0, verifies APR/manifest/workspace snapshot hashes, native OTIO and all owned media, and rejects traversal, links, duplicate names/JSON keys, unexpected members, missing assets and unsupported formats. Limits are2GB compressed and total uncompressed,16MB combined metadata and central directory,10,005ZIP members. Global ZIP64 directories are rejected before allocation, per-member ZIP64 remains supported. Public responses omit staging paths.
 
 Recovery remaps all entity IDs while preserving selected/locked/approved assets, audio composition, captions and markers. It never overwrites the original. A new revision lineage and zero budget are created with remote content sharing and unknown costs disabled. Credentials, task/revision/review history and cost ledger are excluded; historical provider bills are not cancelled. The job receipt identifies the source snapshot and asset counts. No provider call occurs.
 
@@ -278,7 +278,7 @@ Project counts cover all jobs; elapsed p50/p95 use the most recent 200 jobs with
 
 ## Production skills and approved local scripts
 
-App0.7.0 uses APR0.4.0 and migration0007. Legacy APR0.1/0.2/0.3 inputs load with empty production guidance. Stage identifiers are story, continuity, shots, image, video, audio, editing, review and delivery.
+The development branch uses App0.7.0, APR0.5.0 and migration0008. Legacy APR0.1/0.2/0.3 inputs load with empty production guidance. Stage identifiers are story, continuity, shots, image, video, audio, editing, review and delivery.
 
 | Method | Path | Behavior |
 | --- | --- | --- |
@@ -332,3 +332,5 @@ Model profiles add transcription with provider_id=openai-transcription and trans
 - POST /projects/{pid}/timeline/analysis/{jid}/preview accepts base_revision, selected_indices, target_start_frame and optional explicit replace_caption_ids. It returns the exact additions/removals, result hash and preview_token. POST .../commit also requires approved=true and that token. Commit runs through Engine revision checks. Existing subtitles are retained by default, frame-rate changes require another analysis, and token changes cause409.
 
 Worker normalizes the range to16kHz mono. NumPy2.3.5 energy-onset analysis reports beat candidates, estimated BPM and optional periodic consistency. Silence returns no candidates. For large transcription input, local64kbps MP3 compression keeps uploads within25MiB before remote submission. Transcription validates finite, ordered, non-overlapping timed segments against the selected range. Missing timestamps and excessive segments require a compatible model or shorter range. Paid submissions pin the profile revision and record intent before HTTP. Unknown outcomes retain the charge obligation and prevent automatic resubmission. The UI retains request identity across a lost response and background revisions, and preserves candidate drafts on conflicts. Real transcription quality/billing acceptance awaits configured credentials.
+
+Native OTIO exports represent overlapping transition handles explicitly. A D-frame overlap uses floor(D/2) incoming and remaining outgoing offsets, trimming the nominal clip ranges while retaining full available media handles. Two48frame clips therefore produce84frames with a12frame overlap and85frames with11. Overlay tracks are native Stacks of gap/clip lanes, retaining placement/coverage order and hidden state. Rectangle/opacity use versioned AFDS.Transform effect metadata. Receiving editors apply that effect mapping and custom black-fade/wipe metadata. ZIP recovery uses APR as the full composition source and remaps backbone/layer/transition identities, versions and workspace references. Editing/delivery checks and render job errors identify affected clips. System diagnostics verify required FFmpeg composition filters, cached by binary modification time.

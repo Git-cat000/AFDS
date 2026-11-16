@@ -536,8 +536,20 @@ class ProjectEngine:
             link["source_shot_id"] = remap[link["source_shot_id"]]
             link["target_shot_id"] = remap[link["target_shot_id"]]
         apr["timeline"]["tracks"] = apr["timeline"]["tracks"][:1]
+        clip_ids = {item["id"]: new_id() for item in apr["timeline"]["tracks"][0]["items"]}
         for item in apr["timeline"]["tracks"][0]["items"]:
             item["shot_id"] = remap[item["shot_id"]]
+            item["id"] = clip_ids[item["id"]]
+        for transition in apr["timeline"].get("transitions", []):
+            transition["id"] = new_id()
+            transition["from_clip_id"] = clip_ids[transition["from_clip_id"]]
+            transition["to_clip_id"] = clip_ids[transition["to_clip_id"]]
+        for track in apr["timeline"].get("video_layers", []):
+            track["id"] = new_id()
+            track["items"] = []
+        for key in ("captions", "markers"):
+            for item in apr["timeline"].get(key, []):
+                item["id"] = new_id()
         with self.database.transaction() as connection:
             return self.save(
                 connection, apr, None, "Import APR structure; media requires regeneration"

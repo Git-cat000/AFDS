@@ -4,7 +4,10 @@ import importlib
 import math
 import re
 import shutil
+import subprocess
 import time
+from functools import lru_cache
+from pathlib import Path
 
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.sqlite import insert
@@ -19,6 +22,21 @@ WORKER_STALE_SECONDS = 15
 JOB_LIMIT = 50
 MEDIA_LIMIT = 100
 EDGE_LIMIT = 300
+COMPOSITION_FILTERS = {
+    "overlay",
+    "xfade",
+    "format",
+    "scale",
+    "setpts",
+    "trim",
+    "settb",
+    "setsar",
+    "pad",
+    "colorchannelmixer",
+    "concat",
+    "fps",
+    "tpad",
+}
 OPERATIONS = {
     "generate_video",
     "generate_image",
@@ -55,6 +73,26 @@ def native_otio_available():
         return True
     except (ImportError, OSError):
         return False
+
+
+@lru_cache(maxsize=8)
+def composition_filter_names(binary, modified):
+    try:
+        result = subprocess.run(
+            [binary, "-hide_banner", "-filters"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return frozenset(
+            parts[1]
+            for line in result.stdout.decode("utf-8", "replace").splitlines()
+            if len(parts := line.split()) >= 2 and re.fullmatch(r"[TSC.]{2,3}", parts[0])
+        )
+    except (OSError, subprocess.SubprocessError):
+        return frozenset()
 
 
 class OperationsService:
@@ -98,6 +136,15 @@ class OperationsService:
             except (FileNotFoundError, OSError):
                 tools[name] = "unavailable"
         tools["otio"] = "available" if native_otio_available() else "unavailable"
+        tools["video_composition_filters"] = "unavailable"
+        if tools["ffmpeg"] == "available":
+            try:
+                binary = self.database.settings.binary("ffmpeg")
+                filters = composition_filter_names(binary, Path(binary).stat().st_mtime_ns)
+                if COMPOSITION_FILTERS <= filters:
+                    tools["video_composition_filters"] = "available"
+            except OSError:
+                pass
         storage = {"status": "unavailable", "free_bytes": None, "total_bytes": None}
         try:
             usage = shutil.disk_usage(self.database.settings.data_dir)

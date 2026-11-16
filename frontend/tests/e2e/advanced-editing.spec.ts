@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
+import { demoClickTrack, test } from "./audio-fixtures";
 
 test("imports video, edits picture layers and transitions, and plays actual preview and film", async ({
   page,
+  transcriptionContract,
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -11,6 +13,7 @@ test("imports video, edits picture layers and transitions, and plays actual prev
   const title = `DEMO advanced editing ${Date.now()}`;
   const created = await page.request.post("/api/v1/projects/import", {
     data: {
+      apr_schema_version: "0.4.0",
       title,
       brief: "DEMO / MOCK two-clip composition",
       format: { width: 320, height: 180 },
@@ -120,6 +123,74 @@ test("imports video, edits picture layers and transitions, and plays actual prev
   await expect
     .poll(async () => (await latest()).timeline.tracks[0].items[1].start_frame)
     .toBe(36);
+  await page.getByLabel("选择音频文件", { exact: true }).setInputFiles({
+    name: "DEMO-clicks.wav",
+    mimeType: "audio/wav",
+    buffer: demoClickTrack(),
+  });
+  await page
+    .getByLabel("我确认拥有该音频的使用权或已获得授权", { exact: true })
+    .check();
+  await page.getByRole("button", { name: "导入音频", exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await latest()).assets.filter(
+          (asset: { media_type: string }) => asset.media_type === "audio",
+        ).length,
+    )
+    .toBe(1);
+  apr = await latest();
+  await expect(
+    page.getByText(new RegExp(`修订 ${apr.revision}$`)).first(),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "新增音轨", exact: true }).click();
+  await page.getByLabel("音频持续帧", { exact: true }).fill("84");
+  await page.getByRole("button", { name: "添加音频片段", exact: true }).click();
+  await expect
+    .poll(async () => (await latest()).timeline.tracks[1]?.items.length)
+    .toBe(1);
+  await page
+    .getByLabel("字幕内容", { exact: true })
+    .fill("DEMO manual subtitle");
+  await page.getByRole("button", { name: "添加字幕", exact: true }).click();
+  await expect
+    .poll(async () => (await latest()).timeline.captions.length)
+    .toBe(1);
+  await page
+    .getByRole("button", { name: "节拍与语音分析", exact: true })
+    .click();
+  await page.getByRole("button", { name: "检测节拍", exact: true }).click();
+  await expect(
+    page.getByText("8 项候选 · 估计 120 BPM · 周期一致度 100%", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByLabel("候选 2", { exact: true }).check();
+  await page.getByLabel("候选 3", { exact: true }).check();
+  await page.getByRole("button", { name: "预览选中候选", exact: true }).click();
+  await page
+    .getByRole("button", { name: "批准写入时间轴", exact: true })
+    .click();
+  await expect
+    .poll(async () => (await latest()).timeline.markers.length)
+    .toBe(2);
+  await page
+    .getByLabel("批准发送所选音频并承担本次转写费用", { exact: true })
+    .check();
+  await page.getByRole("button", { name: "转写语音", exact: true }).click();
+  await expect(
+    page.getByText(/250–1000 ms · DEMO contract first/),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "选择全部候选", exact: true }).click();
+  await page.getByRole("button", { name: "预览选中候选", exact: true }).click();
+  await page
+    .getByRole("button", { name: "批准写入时间轴", exact: true })
+    .click();
+  await expect
+    .poll(async () => (await latest()).timeline.captions.length)
+    .toBe(3);
+  expect(transcriptionContract.requests).toHaveLength(1);
   await page.getByLabel("预览开始帧", { exact: true }).fill("12");
   await page.getByLabel("预览时长帧", { exact: true }).fill("24");
   await page.getByRole("button", { name: "生成预览片段", exact: true }).click();
@@ -183,5 +254,81 @@ test("imports video, edits picture layers and transitions, and plays actual prev
     path: "../data/advanced-editing-mobile.png",
     fullPage: true,
   });
+  await page.getByRole("button", { name: "导出工程包", exact: true }).click();
+  const packageLink = page.getByRole("link", { name: /下载 afds-.*\.zip/ });
+  await expect(packageLink).toBeVisible();
+  const packageDownload = page.waitForEvent("download");
+  await packageLink.click();
+  await (await packageDownload).saveAs("../data/advanced-editing-project.zip");
+  const jobs = await (await page.request.get(`${root}/jobs`)).json();
+  const exported = jobs.find(
+    (job: { operation: string }) => job.operation === "export_project",
+  );
+  const backup = await page.request.get(`${root}/exports/${exported.id}/file`);
+  expect(backup.status()).toBe(200);
+  const restoredTitle = `${title} restored`;
+  await page.getByRole("button", { name: "返回项目列表", exact: true }).click();
+  await page
+    .getByLabel("工程包 ZIP", { exact: true })
+    .setInputFiles({
+      name: "DEMO-composition.zip",
+      mimeType: "application/zip",
+      buffer: await backup.body(),
+    });
+  await page.getByLabel("恢复副本名称", { exact: true }).fill(restoredTitle);
+  await page.getByRole("button", { name: "恢复为新项目", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: restoredTitle, exact: true }),
+  ).toBeVisible();
+  let restoredId = "";
+  await expect
+    .poll(async () => {
+      const projects = await (
+        await page.request.get("/api/v1/projects")
+      ).json();
+      restoredId =
+        projects.find(
+          (project: { title: string }) => project.title === restoredTitle,
+        )?.project_id || "";
+      if (!restoredId) return 0;
+      const restored = await (
+        await page.request.get(`/api/v1/projects/${restoredId}/apr`)
+      ).json();
+      return restored.timeline.video_layers.length;
+    })
+    .toBe(1);
+  const restoredRoot = `/api/v1/projects/${restoredId}`;
+  const restored = await (await page.request.get(`${restoredRoot}/apr`)).json();
+  expect(restored.timeline.transitions[0].from_clip_id).toBe(
+    restored.timeline.tracks[0].items[0].id,
+  );
+  expect(restored.timeline.tracks[0].items[0].id).not.toBe(
+    apr.timeline.tracks[0].items[0].id,
+  );
+  expect(restored.timeline.captions[0].text).toBe("DEMO manual subtitle");
+  expect(restored.timeline.markers).toHaveLength(2);
+  await page.getByRole("button", { name: "渲染成片", exact: true }).click();
+  await expect
+    .poll(async () => {
+      const values = await (
+        await page.request.get(`${restoredRoot}/jobs`)
+      ).json();
+      return values.find(
+        (job: { operation: string }) => job.operation === "render_timeline",
+      )?.state;
+    })
+    .toBe("completed");
+  const final = await (await page.request.get(`${restoredRoot}/apr`)).json();
+  expect(
+    final.assets.find(
+      (asset: { id: string }) => asset.id === final.render_asset_id,
+    ).duration_frames,
+  ).toBe(84);
+  const restoredDownload = page.waitForEvent("download");
+  await page.getByRole("link", { name: "下载 MP4", exact: true }).click();
+  await (
+    await restoredDownload
+  ).saveAs("../data/advanced-editing-restored-output.mp4");
+  expect(transcriptionContract.requests).toHaveLength(1);
   expect(errors).toEqual([]);
 });

@@ -123,10 +123,23 @@ class Worker:
                     for track in job["request"].get("video_layers", [])
                     for item in track["items"]
                 ]
-                sources = [
-                    asset_path(self.database, job["project_id"], item["asset_id"])
-                    for item in video_items
-                ]
+                sources = []
+                for item in video_items:
+                    try:
+                        sources.append(
+                            asset_path(self.database, job["project_id"], item["asset_id"])
+                        )
+                    except DomainError as error:
+                        raise DomainError(
+                            error.code,
+                            error.message,
+                            error.status,
+                            {
+                                **error.details,
+                                "clip_id": item.get("id"),
+                                "asset_id": item["asset_id"],
+                            },
+                        ) from error
                 for source, item in zip(sources, video_items, strict=True):
                     if file_hash(source) != item["sha256"]:
                         raise DomainError(
@@ -213,6 +226,7 @@ class Worker:
                 error.code,
                 error.message,
                 transient=getattr(error, "transient", False),
+                details=error.details,
             )
         except FileNotFoundError:
             self.queue.fail(
