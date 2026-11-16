@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.timeline_models import TimelineData as Timeline
+from app.timeline_models import stable_clip_id
 
 
 def new_id() -> str:
@@ -137,7 +138,7 @@ class BudgetPolicy(Schema):
 
 
 class APR(ProjectCreate):
-    apr_schema_version: Literal["0.1.0", "0.2.0", "0.3.0", "0.4.0"] = "0.4.0"
+    apr_schema_version: Literal["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0"] = "0.5.0"
     project_id: UUID = Field(default_factory=uuid4)
     revision: int = Field(default=1, ge=1)
     status: Literal["draft", "ready", "archived"] = "draft"
@@ -252,9 +253,13 @@ class APR(ProjectCreate):
         from app.continuity import validate_continuity
         from app.timeline_service import validate_timeline
 
+        if self.timeline.tracks[0].type == "video":
+            for item in self.timeline.tracks[0].items:
+                if item.id is None:
+                    item.id = UUID(stable_clip_id(self.project_id, item.shot_id))
         validate_timeline(self.model_dump(mode="json"))
         validate_continuity(self.model_dump(mode="json"))
-        self.apr_schema_version = "0.4.0"
+        self.apr_schema_version = "0.5.0"
         return self
 
 

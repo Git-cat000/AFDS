@@ -76,7 +76,7 @@ def test_shot_reference_roles_validate_owned_images_and_clear_on_structure_impor
     )
     assert response.status_code == 200, response.text
     updated = response.json()
-    assert updated["apr_schema_version"] == "0.4.0"
+    assert updated["apr_schema_version"] == "0.5.0"
     assert updated["shots"][0]["reference_images"]["start_image"] == asset_id
     invalid = client.patch(
         root + f"/shots/{shot_id}",

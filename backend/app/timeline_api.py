@@ -9,7 +9,12 @@ from fastapi import APIRouter, Query, Request
 from app.audio_pipeline import MAX_UPLOAD_BYTES
 from app.errors import DomainError
 from app.storage import contained, ensure_space
-from app.timeline_service import AnchorRequest, CompositionUpdate, TimelineService
+from app.timeline_service import (
+    AnchorRequest,
+    CompositionUpdate,
+    CompositionUpdateV2,
+    TimelineService,
+)
 
 router = APIRouter(prefix="/projects/{project_id}/timeline")
 
@@ -22,6 +27,16 @@ def update_composition(project_id: UUID, body: CompositionUpdate, request: Reque
 @router.post("/anchors/preview")
 def preview_anchors(project_id: UUID, body: AnchorRequest, request: Request):
     return TimelineService(request.app.state.database).preview(project_id, body)
+
+
+@router.put("/composition-v2")
+def update_composition_v2(project_id: UUID, body: CompositionUpdateV2, request: Request):
+    return TimelineService(request.app.state.database).update_v2(project_id, body)
+
+
+@router.post("/composition/preview")
+def preview_composition(project_id: UUID, body: CompositionUpdateV2, request: Request):
+    return TimelineService(request.app.state.database).preview_composition(project_id, body)
 
 
 @router.post("/anchors/commit")

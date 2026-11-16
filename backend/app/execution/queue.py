@@ -75,27 +75,9 @@ def shot_request(apr, shot, provider_config=None):
 
 
 def render_request(apr):
-    from app.timeline_service import composition_request
+    from app.composition import build_composition
 
-    items = []
-    for placement in apr["timeline"]["tracks"][0]["items"]:
-        shot = find(apr["shots"], placement["shot_id"])
-        if not shot["active_asset_version_id"]:
-            raise DomainError("MISSING_ASSET", "Generate every timeline shot first", 409)
-        version = find(apr["asset_versions"], shot["active_asset_version_id"])
-        if version["status"] == "stale" or shot["status"] in {"stale", "needs_review"}:
-            raise DomainError("STALE_ASSET", "Regenerate or review stale timeline shots", 409)
-        asset = find(apr["assets"], version["asset_id"])
-        items.append({**placement, "asset_id": asset["id"], "sha256": asset["sha256"]})
-    if not items:
-        raise DomainError("EMPTY_TIMELINE", "Add shots to the timeline first", 422)
-    return {
-        "items": items,
-        "format": apr["format"],
-        "audio_policy": "silent",
-        "adapter_version": "0.1.0",
-        **composition_request(apr),
-    }
+    return build_composition(apr)
 
 
 def serialize(row):

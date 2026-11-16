@@ -52,11 +52,11 @@
 
 添加或更改转场先生成时序预览，列出主轨起点、成片总长和受影响的音频/字幕/标记。关联内容采用其现有绝对帧位置，越界时用户在同一预览中明确选择裁剪或调整，批准后原子提交。锁定和批准镜头的源设定变更仍经过既有保护流程。
 
-- [ ] 添加失败测试 `test_legacy_composition_update_preserves_layers`、`test_transition_overlap_changes_duration`、`test_fractional_fps_round_trip`。两个 48 帧片段重叠 12 帧时输出为 84 帧。非法几何、外项目素材、越界裁切及三片段重叠返回 422。
-- [ ] 执行 `.venv/Scripts/python.exe -m pytest backend/tests/test_composition.py -q --basetemp data/composition-red`，记录新字段和事务缺失导致的失败。
-- [ ] 实现模型、旧 APR 装载与 `build_composition()`。修改 `rebuild_timeline()` 保持稳定片段 ID，主轨调整后重新校验层、转场及锚点。合成描述改变使成片失效，独立片段源素材依赖继续精确维护。
-- [ ] 实现 V2 编辑与转场预览/批准入口，预览摘要固定原修订及关联调整。将规范化描述、素材哈希和渲染器版本纳入队列指纹。
-- [ ] 执行定向测试和既有 `test_audio_timeline.py`、`test_engine.py`、`test_phase6_regressions.py`。确认旧 API 和受保护镜头行为后精确提交。
+- [x] 添加失败测试 `test_legacy_composition_update_preserves_layers`、`test_transition_overlap_changes_duration`、`test_fractional_fps_round_trip`。两个 48 帧片段重叠 12 帧时输出为 84 帧。非法几何、外项目素材、越界裁切及三片段重叠返回 422。
+- [x] 执行 `.venv/Scripts/python.exe -m pytest backend/tests/test_composition.py -q --basetemp data/composition-red`，记录新字段和事务缺失导致的失败。
+- [x] 实现模型、旧 APR 装载与 `build_composition()`。修改 `rebuild_timeline()` 保持稳定片段 ID，主轨调整后重新校验层、转场及锚点。合成描述改变使成片失效，独立片段源素材依赖继续精确维护。
+- [x] 实现 V2 编辑与转场预览/批准入口，预览摘要固定原修订及关联调整。将规范化描述、素材哈希和渲染器版本纳入队列指纹。
+- [x] 执行定向测试和既有 `test_audio_timeline.py`、`test_engine.py`、`test_phase6_regressions.py`。确认旧 API 和受保护镜头行为后精确提交。
 
 ## A2 画中画、真实转场与预览
 

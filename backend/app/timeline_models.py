@@ -1,7 +1,7 @@
 """Frame-based composition models, independent from the APR/schema module."""
 
 from typing import Literal
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -14,8 +14,48 @@ class TimelineModel(BaseModel):
 
 
 class VideoPlacement(TimelineModel):
+    id: UUID | None = None
     shot_id: UUID
     start_frame: int = Field(ge=0, le=MAX_FRAMES)
+    duration_frames: int = Field(gt=0, le=1800)
+
+
+def stable_clip_id(project_id, shot_id):
+    return str(uuid5(UUID(str(project_id)), f"main:{shot_id}"))
+
+
+class VideoLayerPlacement(TimelineModel):
+    id: UUID
+    asset_id: UUID
+    asset_version_id: UUID | None = None
+    start_frame: int = Field(ge=0, le=MAX_FRAMES)
+    source_start_frame: int = Field(default=0, ge=0, le=MAX_FRAMES)
+    duration_frames: int = Field(gt=0, le=MAX_FRAMES)
+    x: float = Field(default=0.65, ge=0, le=1)
+    y: float = Field(default=0.65, ge=0, le=1)
+    width: float = Field(default=0.3, ge=0.05, le=1)
+    height: float = Field(default=0.3, ge=0.05, le=1)
+    opacity: float = Field(default=1, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def contained_rectangle(self):
+        if self.x + self.width > 1 + 1e-9 or self.y + self.height > 1 + 1e-9:
+            raise ValueError("Picture rectangle exceeds the output frame")
+        return self
+
+
+class VideoLayerTrack(TimelineModel):
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,80}$")
+    name: str = Field(default="", max_length=120)
+    hidden: bool = False
+    items: list[VideoLayerPlacement] = Field(default_factory=list, max_length=100)
+
+
+class VideoTransition(TimelineModel):
+    id: UUID
+    from_clip_id: UUID
+    to_clip_id: UUID
+    kind: Literal["dissolve", "fadeblack", "wipeleft"]
     duration_frames: int = Field(gt=0, le=1800)
 
 
@@ -68,6 +108,8 @@ class TimelineData(TimelineModel):
     )
     captions: list[Caption] = Field(default_factory=list, max_length=500)
     markers: list[TimelineMarker] = Field(default_factory=list, max_length=1000)
+    video_layers: list[VideoLayerTrack] = Field(default_factory=list, max_length=7)
+    transitions: list[VideoTransition] = Field(default_factory=list, max_length=99)
 
 
 Track = TimelineTrack

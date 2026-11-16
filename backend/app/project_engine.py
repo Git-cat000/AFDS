@@ -58,8 +58,14 @@ def find(items, entity_id):
 
 
 def rebuild_timeline(apr, shot_ids=None):
+    from app.composition import position_backbone
+    from app.timeline_models import stable_clip_id
+
     if shot_ids is None:
         shot_ids = [i["shot_id"] for i in apr["timeline"]["tracks"][0]["items"]]
+    previous_ids = {
+        item["shot_id"]: item.get("id") for item in apr["timeline"]["tracks"][0]["items"]
+    }
     items = []
     position = 0
     for sid in shot_ids:
@@ -68,6 +74,7 @@ def rebuild_timeline(apr, shot_ids=None):
             continue
         items.append(
             {
+                "id": previous_ids.get(str(sid)) or stable_clip_id(apr["project_id"], sid),
                 "shot_id": str(sid),
                 "start_frame": position,
                 "duration_frames": shot["duration_frames"],
@@ -75,6 +82,7 @@ def rebuild_timeline(apr, shot_ids=None):
         )
         position += shot["duration_frames"]
     apr["timeline"]["tracks"][0]["items"] = items
+    position_backbone(apr["timeline"])
     apr["timeline"]["version"] += 1
 
 

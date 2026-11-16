@@ -312,3 +312,9 @@ Import limits are16MiB ZIP,32MiB unpacked,256members and8MiB per resource. YAML 
 `PUT /projects/{project_id}/workspace` accepts base_workspace_revision and document. Engine transactions check owned references and atomically advance the workspace revision. WORKSPACE_CONFLICT returns409. Canvas saves preserve the film APR revision and media dependencies. A new workspace starts at revision0 with initialized=false. The browser migrates a legacy board only into that empty workspace and preserves unsynchronized drafts across connection failures.
 
 HTTP project exports pin both the film and workspace revisions in one transaction. Portable ZIP0.3 adds workspace.json with its SHA256 and source revision in manifest.json. Restore validates the document, remaps project-owned references and commits it with the new project. ZIP0.2 remains supported with an empty workspace. An intervening edit to a restore destination's workspace causes a revision conflict, retaining its draft.
+
+## Video composition
+
+APR0.5 retains the video backbone and audio tracks, and adds video_layers and transitions. Backbone clips have stable UUID identities. Each of up to7overlay tracks contains owned image/video placements with source trim, frame timing, normalized rectangle and opacity. Transition types are dissolve, fadeblack and wipeleft, joining neighboring backbone clips with explicit overlap frames.
+
+`POST /projects/{id}/timeline/composition/preview` accepts a full V2 composition, returning its token, total_frames, overflow changes and can_apply. `PUT /projects/{id}/timeline/composition-v2` commits the revision-checked composition. Transition changes and overflow adjustments require the approved preview token. trim_overflow explicitly permits the listed end trims. Ordinary layer edits can be saved directly. The legacy composition endpoint continues editing audio/captions/markers while preserving video layers and transitions.
