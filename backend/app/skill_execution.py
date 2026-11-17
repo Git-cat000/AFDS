@@ -214,6 +214,24 @@ class SkillExecution:
             raise DomainError(
                 "APPROVAL_REQUIRED", "Review and approve this exact local script run", 409
             )
+        with self.database.engine.connect() as connection:
+            proposal = connection.execute(
+                select(db.plans.c.payload).where(
+                    db.plans.c.id == str(plan_id), db.plans.c.project_id == str(project_id)
+                )
+            ).scalar_one_or_none()
+        policy, policy_error = None, None
+        if (
+            proposal
+            and not proposal.get("job_id")
+            and proposal.get("request", {}).get("execution_mode") == "container"
+        ):
+            try:
+                policy = skill_sandbox.execution_policy(
+                    self.database.settings, proposal["request"]["timeout_seconds"]
+                )
+            except DomainError as error:
+                policy_error = error
         with self.database.transaction() as connection:
             apr = self.engine.load(connection, project_id)
             plan = connection.execute(
@@ -249,10 +267,12 @@ class SkillExecution:
             if hashlib.sha256(source).hexdigest() != request["script_sha256"]:
                 raise DomainError("HASH_MISMATCH", "Approved script source changed", 409)
             if request["execution_mode"] == "container":
-                current = skill_sandbox.execution_policy(
-                    self.database.settings, request["timeout_seconds"]
-                )
-                if skill_sandbox.policy_digest(current) != request["execution_policy_sha256"]:
+                if policy_error:
+                    raise policy_error
+                if (
+                    policy is None
+                    or skill_sandbox.policy_digest(policy) != request["execution_policy_sha256"]
+                ):
                     raise DomainError(
                         "SANDBOX_POLICY_CHANGED", "Preview the current container policy again", 409
                     )
@@ -441,6 +461,7 @@ class SkillExecution:
             ):
                 continue
             with self.database.transaction() as connection:
+                db.lock_project(connection, row["project_id"])
                 payload = connection.execute(
                     select(db.jobs.c.payload).where(db.jobs.c.id == row["id"])
                 ).scalar_one()

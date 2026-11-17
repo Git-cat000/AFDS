@@ -90,7 +90,8 @@ class ProjectEngine:
     def __init__(self, database: db.Database):
         self.database = database
 
-    def load(self, connection, project_id):
+    def load(self, connection, project_id, *, for_update=False):
+        db.lock_project(connection, project_id, force=for_update)
         row = (
             connection.execute(
                 select(db.projects).where(
@@ -126,7 +127,7 @@ class ProjectEngine:
         return apr
 
     def read(self, project_id):
-        with self.database.engine.connect() as connection:
+        with self.database.transaction(snapshot=True) as connection:
             return self.load(connection, project_id)
 
     def check_revision(self, apr, base_revision):
@@ -154,7 +155,15 @@ class ProjectEngine:
         if before is None:
             connection.execute(insert(db.projects).values(id=pid, **values))
         else:
-            connection.execute(update(db.projects).where(db.projects.c.id == pid).values(**values))
+            result = connection.execute(
+                update(db.projects)
+                .where(db.projects.c.id == pid, db.projects.c.revision == before["revision"])
+                .values(**values)
+            )
+            if result.rowcount != 1:
+                raise DomainError(
+                    "REVISION_CONFLICT", "Project changed. Refresh and preview again.", 409
+                )
         for key, table in [
             ("scenes", db.scenes),
             ("shots", db.shots),
@@ -264,7 +273,7 @@ class ProjectEngine:
         revision = current["workspace_revision"] + 1
         values = dict(revision=revision, payload=document, author=author, updated_at=time.time())
         if current["initialized"]:
-            connection.execute(
+            result = connection.execute(
                 update(db.workspaces)
                 .where(
                     db.workspaces.c.project_id == str(project_id),
@@ -272,6 +281,10 @@ class ProjectEngine:
                 )
                 .values(**values)
             )
+            if result.rowcount != 1:
+                raise DomainError(
+                    "WORKSPACE_CONFLICT", "Canvas changed. Refresh its snapshot.", 409
+                )
         else:
             connection.execute(insert(db.workspaces).values(project_id=str(project_id), **values))
         emit(connection, str(project_id), "workspace.updated", {"workspace_revision": revision})

@@ -47,11 +47,11 @@
 - `ProjectEngine.load(connection, project_id, *, for_update=False)` 在 PostgreSQL 写事务中取得项目行锁，`save()` 的 revision 条件写入提供额外竞争检查。
 - `Queue.claim(owner)` 在 PostgreSQL 使用锁定领取与 `SKIP LOCKED`，预算预留和项目修改在同一事务中序列化。
 
-- [ ] 添加失败测试 `test_two_mutations_commit_one_revision`、`test_two_workers_claim_once`、`test_concurrent_budget_reservations_respect_limit`。两个相同 base revision 的写入只有一个成功，单任务只有一个租约，预算预留总额不超过上限。
-- [ ] 对真实 PostgreSQL 数据库执行 `test_postgres_concurrency.py`，同时对 SQLite 执行同类用例，记录当前方言与事务行为缺失。
-- [ ] 实现方言设置、连接、迁移和事务。逐项检查 Alembic、JSON 投影、主键自增、唯一约束、金额累加及时间字段在两种数据库上的行为，保留精确微单位计算。
-- [ ] 将所有写事务入口接入项目行锁或同等原子条件，包括队列入队、批准、预算、恢复、清理、选片和 Worker 回写。外部服务调用放在持锁事务之外。
-- [ ] 验证并发幂等冲突返回已存在任务或明确的 409，测试事务回滚清除失败的预算预留和部分元数据。执行旧工程迁移及完整数据库回归后精确提交。
+- [x] 添加失败测试 `test_two_mutations_commit_one_revision`、`test_two_workers_claim_once`、`test_concurrent_budget_reservations_respect_limit`。两个相同 base revision 的写入只有一个成功，单任务只有一个租约，预算预留总额不超过上限。
+- [x] 对真实 PostgreSQL 数据库执行 `test_postgres_concurrency.py`，同时对 SQLite 执行同类用例，记录当前方言与事务行为缺失。
+- [x] 实现方言设置、连接、迁移和事务。逐项检查 Alembic、JSON 投影、主键自增、唯一约束、金额累加及时间字段在两种数据库上的行为，保留精确微单位计算。
+- [x] 将所有写事务入口接入项目行锁或同等原子条件，包括队列入队、批准、预算、恢复、清理、选片和 Worker 回写。外部服务调用放在持锁事务之外。
+- [x] 验证并发幂等冲突返回已存在任务或明确的 409，测试事务回滚清除失败的预算预留和部分元数据。执行旧工程迁移及完整数据库回归后精确提交。
 
 SQLAlchemy 的 PostgreSQL 行锁和 `SKIP LOCKED` 支持作为领取与写入实现依据。[SQLAlchemy 2.0 查询构造](https://docs.sqlalchemy.org/en/20/core/selectable.html#sqlalchemy.sql.expression.Select.with_for_update)
 

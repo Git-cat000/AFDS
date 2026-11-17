@@ -112,6 +112,8 @@ npm run dev
 
 所有相对数据库和媒体路径均以项目根目录为基准。直接使用 Alembic 时运行 `.venv\Scripts\alembic.exe -c backend\alembic.ini upgrade head`。
 
+数据库支持默认 SQLite 和 PostgreSQL 17。使用 PostgreSQL 时，将 `AFDS_DATABASE_URL` 设置为部署环境提供的 `postgresql+psycopg` 连接地址，再执行迁移。API 与 Worker 使用相同数据库和逻辑素材目录。项目写入采用行锁与修订检查，任务领取支持 `SKIP LOCKED`，工程快照使用一致性事务。团队账号、节点与部署配置随后续产品化步骤交付。
+
 ## 在 Studio 中制作演示
 
 1. 在项目页填写名称与创作简述，点击“创建项目”。

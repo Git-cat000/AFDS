@@ -23,8 +23,8 @@ class Settings(BaseSettings):
         if self.database_url.startswith("sqlite:///./"):
             path = (ROOT / self.database_url.removeprefix("sqlite:///./")).resolve()
             self.database_url = "sqlite:///" + path.as_posix()
-        if not self.database_url.startswith("sqlite:///"):
-            raise ValueError("v0.1 supports a local SQLite database")
+        if not self.database_url.startswith(("sqlite:///", "postgresql+psycopg://")):
+            raise ValueError("Use SQLite or PostgreSQL with the Psycopg driver")
 
     def binary(self, name: str) -> str:
         configured = getattr(self, name)

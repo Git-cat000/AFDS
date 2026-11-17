@@ -6,7 +6,7 @@ from typing import Literal
 from uuid import UUID
 
 from pydantic import Field, ValidationError
-from sqlalchemy import and_, func, literal_column, or_, select
+from sqlalchemy import BigInteger, and_, func, or_, select
 
 from app import db
 from app.budget import BudgetService, money
@@ -26,10 +26,11 @@ class Cursor(Schema):
 
 
 def created_at(table):
-    return func.coalesce(func.json_extract(table.c.payload, literal_column("'$.created_at'")), 0)
+    return func.coalesce(table.c.payload["created_at"].as_float(), 0)
 
 
 def owned_header(connection, project_id):
+    db.lock_project(connection, project_id)
     row = (
         connection.execute(
             select(
@@ -59,11 +60,12 @@ def page_rows(connection, query, stamp, key, project_id, kind, limit, cursor, st
                 or value.state != state
             ):
                 raise ValueError("Cursor context changed")
+            key_value = int(value.key) if kind == "revisions" else value.key
         except (ValueError, ValidationError, UnicodeError) as error:
             raise DomainError(
                 "INVALID_CURSOR", "Cursor does not match this project or filter", 422
             ) from error
-        query = query.where(or_(stamp < value.stamp, and_(stamp == value.stamp, key < value.key)))
+        query = query.where(or_(stamp < value.stamp, and_(stamp == value.stamp, key < key_value)))
     rows = [
         dict(row)
         for row in connection.execute(
@@ -106,13 +108,14 @@ class HistoryService:
                     .group_by(db.jobs.c.state)
                 ).all()
             )
+            operation = db.jobs.c.payload["operation"].as_string()
             active_operations = dict(
                 connection.execute(
-                    select(db.jobs.c.payload["operation"].as_string(), func.count())
+                    select(operation, func.count())
                     .where(
                         db.jobs.c.project_id == str(project_id), db.jobs.c.state.in_(ACTIVE_STATES)
                     )
-                    .group_by(db.jobs.c.payload["operation"].as_string())
+                    .group_by(operation)
                 ).all()
             )
             payload = db.jobs.c.payload
@@ -191,8 +194,8 @@ class HistoryService:
                     payload[name].as_string().label(name)
                     for name in ("state", "currency", "provider_id")
                 ],
-                payload["estimate_micros"].as_integer().label("estimate_micros"),
-                payload["actual_micros"].as_integer().label("actual_micros"),
+                payload["estimate_micros"].as_string().cast(BigInteger).label("estimate_micros"),
+                payload["actual_micros"].as_string().cast(BigInteger).label("actual_micros"),
                 payload["reconcile_after"].as_float().label("reconcile_after"),
                 created_at(db.cost_entries).label("created_at"),
             ).where(db.cost_entries.c.project_id == str(project_id))

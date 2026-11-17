@@ -10,10 +10,15 @@ depends_on = None
 
 
 def upgrade():
+    created = (
+        "COALESCE((payload ->> 'created_at')::double precision, 0)"
+        if op.get_bind().dialect.name == "postgresql"
+        else "COALESCE(json_extract(payload, '$.created_at'), 0)"
+    )
     for table in ("jobs", "cost_entries"):
         op.execute(
             f"CREATE INDEX ix_{table}_project_created ON {table} "
-            "(project_id, COALESCE(json_extract(payload, '$.created_at'), 0) DESC, id DESC)"
+            f"(project_id, {created} DESC, id DESC)"
         )
     op.create_table(
         "creative_feedback",

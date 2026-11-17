@@ -109,21 +109,21 @@ class Queue:
         self.engine = ProjectEngine(database)
 
     def get(self, connection, project_id, job_id):
-        row = (
-            connection.execute(
-                select(db.jobs).where(
-                    db.jobs.c.id == str(job_id),
-                    db.jobs.c.project_id == str(project_id),
-                )
-            )
-            .mappings()
-            .first()
+        db.lock_project(connection, project_id)
+        query = select(db.jobs).where(
+            db.jobs.c.id == str(job_id), db.jobs.c.project_id == str(project_id)
         )
+        if connection.dialect.name == "postgresql" and connection.info.get(
+            "afds_write_transaction"
+        ):
+            query = query.with_for_update()
+        row = connection.execute(query).mappings().first()
         if not row:
             raise DomainError("NOT_FOUND", "Job not found in this project", 404)
         return serialize(row)
 
     def enqueue(self, connection, apr, operation, request, target=None, idempotency_key=None):
+        db.lock_project(connection, apr["project_id"])
         fingerprint = digest(request)
         key = idempotency_key or f"{apr['project_id']}:{operation}:{fingerprint}"
         existing = (
@@ -459,6 +459,7 @@ class Queue:
         return current
 
     def set_state(self, connection, job, target, **payload_updates):
+        db.lock_project(connection, job["project_id"])
         transition(job["state"], target)
         row = connection.execute(
             select(db.jobs.c.payload).where(db.jobs.c.id == job["id"])
@@ -480,9 +481,35 @@ class Queue:
     def claim(self, owner):
         now = time.time()
         with self.database.transaction() as connection:
+            postgres = connection.dialect.name == "postgresql"
+            scope = []
+            if postgres:
+                ready = (
+                    select(db.jobs.c.id)
+                    .where(
+                        db.jobs.c.project_id == db.projects.c.id,
+                        (
+                            db.jobs.c.state.in_({"queued", "retry_wait"})
+                            & (db.jobs.c.available_at <= now)
+                        )
+                        | (db.jobs.c.state.in_(ACTIVE) & (db.jobs.c.lease_expires_at < now)),
+                    )
+                    .exists()
+                )
+                project_id = connection.execute(
+                    select(db.projects.c.id)
+                    .where(ready)
+                    .order_by(db.projects.c.id)
+                    .with_for_update(skip_locked=True)
+                    .limit(1)
+                ).scalar_one_or_none()
+                if project_id is None:
+                    return None
+                scope = [db.jobs.c.project_id == project_id]
             expired = (
                 connection.execute(
                     select(db.jobs).where(
+                        *scope,
                         db.jobs.c.state.in_(ACTIVE),
                         db.jobs.c.lease_expires_at < now,
                     )
@@ -519,11 +546,17 @@ class Queue:
                 else:
                     self.set_state(connection, job, "queued")
             # SQLite mode intentionally runs at most one active media task.
-            if connection.execute(select(db.jobs.c.id).where(db.jobs.c.state.in_(ACTIVE))).first():
+            if (
+                not postgres
+                and connection.execute(
+                    select(db.jobs.c.id).where(db.jobs.c.state.in_(ACTIVE))
+                ).first()
+            ):
                 return None
             waiting = (
                 connection.execute(
                     select(db.jobs).where(
+                        *scope,
                         db.jobs.c.state == "retry_wait",
                         db.jobs.c.available_at <= now,
                     )
@@ -533,21 +566,21 @@ class Queue:
             )
             for row in waiting:
                 self.set_state(connection, serialize(row), "queued")
-            row = (
-                connection.execute(
-                    select(db.jobs)
-                    .where(
-                        db.jobs.c.state == "queued",
-                        db.jobs.c.available_at <= now,
-                    )
-                    .order_by(
-                        db.jobs.c.available_at,
-                        db.jobs.c.rowid if "rowid" in db.jobs.c else db.jobs.c.id,
-                    )
+            query = (
+                select(db.jobs)
+                .where(
+                    *scope,
+                    db.jobs.c.state == "queued",
+                    db.jobs.c.available_at <= now,
                 )
-                .mappings()
-                .first()
+                .order_by(
+                    db.jobs.c.available_at,
+                    db.jobs.c.rowid if "rowid" in db.jobs.c else db.jobs.c.id,
+                )
             )
+            if postgres:
+                query = query.with_for_update(skip_locked=True)
+            row = connection.execute(query.limit(1)).mappings().first()
             if row is None:
                 return None
             job = serialize(row)

@@ -2,7 +2,15 @@
 
 Base path is `/api/v1`. The development API is available at `http://127.0.0.1:8000`. Interactive schemas are at `/docs` and `/openapi.json`.
 
-Project, scene, shot, asset and job IDs are UUIDs. Provider slots use category identifiers. Project changes require `base_revision`. The server checks revision inside the same SQLite write transaction. Conflicts return HTTP 409. Mutations use JSON, including soft-archive DELETE requests. This release serves a single local user.
+Project, scene, shot, asset and job IDs are UUIDs. Provider slots use category identifiers. Project changes require `base_revision`. The server checks revision inside the same database write transaction. Conflicts return HTTP 409. Mutations use JSON, including soft-archive DELETE requests. The current application session serves a single local user while team identity is being implemented.
+
+## Database transactions
+
+AFDS_DATABASE_URL accepts SQLite URLs and postgresql+psycopg URLs. PostgreSQL17 uses Psycopg3.3.9. Alembic applies the same0001–0008 logical schema to each dialect. SQLite uses WAL and BEGIN IMMEDIATE for writes. PostgreSQL writes acquire the project row before job and budget changes, with revision-conditional APR/workspace updates. Initial global provider and immutable-package writes use transaction-scoped advisory locks. Conflicting edits return409 and failed transactions roll back reservations and events.
+
+PostgreSQL task claiming locks an eligible project and task with SKIP LOCKED. A writer holding another project leaves eligible work available. SQLite keeps one active media task. Snapshot reads establish PostgreSQL REPEATABLE READ before the first query and a SQLite read transaction, keeping APR/workspace exports consistent while writers commit. Micro-unit sums retain Python integer precision. JSON projections, numeric revision cursors and Worker heartbeat upserts support both dialects. Docker preflight runs before approval's write transaction.
+
+The locking and snapshot implementation follows the documented database primitives. [SQLAlchemy transactions](https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#transaction-isolation-level) · [PostgreSQL transaction advisory locks](https://www.postgresql.org/docs/17/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS)
 
 ## Bounded reads and durable creation
 

@@ -10,7 +10,8 @@ from functools import lru_cache
 from pathlib import Path
 
 from sqlalchemy import func, select, text
-from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import SQLAlchemyError
 
 from app import db
@@ -61,6 +62,7 @@ OPERATIONS = {
 
 def pulse_worker(connection, owner, now=None):
     now = time.time() if now is None else now
+    insert = postgres_insert if connection.dialect.name == "postgresql" else sqlite_insert
     statement = insert(db.worker_heartbeats).values(owner=owner, started_at=now, last_seen_at=now)
     connection.execute(
         statement.on_conflict_do_update(index_elements=["owner"], set_={"last_seen_at": now})

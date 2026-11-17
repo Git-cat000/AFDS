@@ -241,7 +241,12 @@ class SkillLibrary:
         defaults.sort(key=lambda value: (value["name"], value["id"]))
         conditions = []
         if stage:
-            stages = func.json_each(db.skill_packages.c.summary["stages"]).table_valued("value")
+            expand = (
+                func.json_array_elements_text
+                if self.database.engine.dialect.name == "postgresql"
+                else func.json_each
+            )
+            stages = expand(db.skill_packages.c.summary["stages"]).table_valued("value")
             conditions.append(select(stages.c.value).where(stages.c.value == stage).exists())
         values = defaults[offset : offset + limit]
         with self.database.engine.connect() as connection:
@@ -285,6 +290,7 @@ class SkillLibrary:
         if package["id"] in builtins():
             return public_package(builtins()[package["id"]])
         with self.database.transaction() as connection:
+            db.lock_named_resource(connection, f"skill-package:{package['id']}")
             prior = connection.execute(
                 select(db.skill_packages.c.payload).where(db.skill_packages.c.id == package["id"])
             ).scalar_one_or_none()

@@ -1,3 +1,4 @@
+import hashlib
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -16,6 +17,8 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
     event,
+    func,
+    select,
 )
 
 from app.config import ROOT, Settings
@@ -206,24 +209,41 @@ workspaces = Table(
 )
 
 
+def lock_project(connection, project_id, *, force=False):
+    if connection.dialect.name == "postgresql" and (
+        force or connection.info.get("afds_write_transaction")
+    ):
+        connection.execute(
+            select(projects.c.id).where(projects.c.id == str(project_id)).with_for_update()
+        ).first()
+
+
+def lock_named_resource(connection, name):
+    if connection.dialect.name == "postgresql":
+        identity = int.from_bytes(hashlib.sha256(f"afds:{name}".encode()).digest()[:8], signed=True)
+        connection.execute(select(func.pg_advisory_xact_lock(identity)))
+
+
 class Database:
     def __init__(self, settings: Settings):
         self.settings = settings
-        path = settings.database_url.removeprefix("sqlite:///")
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        sqlite = settings.database_url.startswith("sqlite:///")
+        if sqlite:
+            path = settings.database_url.removeprefix("sqlite:///")
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.engine = create_engine(
             settings.database_url,
-            connect_args={
-                "check_same_thread": False,
-                "timeout": 30,
-            },
+            connect_args={"check_same_thread": False, "timeout": 30} if sqlite else {},
+            pool_pre_ping=True,
         )
 
-        @event.listens_for(self.engine, "connect")
-        def pragmas(connection, _):
-            connection.execute("PRAGMA foreign_keys=ON")
-            connection.execute("PRAGMA journal_mode=WAL")
-            connection.execute("PRAGMA busy_timeout=30000")
+        if sqlite:
+
+            @event.listens_for(self.engine, "connect")
+            def pragmas(connection, _):
+                connection.execute("PRAGMA foreign_keys=ON")
+                connection.execute("PRAGMA journal_mode=WAL")
+                connection.execute("PRAGMA busy_timeout=30000")
 
     def migrate(self):
         config = Config(str(ROOT / "backend" / "alembic.ini"))
@@ -234,10 +254,18 @@ class Database:
     @contextmanager
     def transaction(self, *, snapshot=False):
         with self.engine.connect() as connection:
-            connection.exec_driver_sql("BEGIN IMMEDIATE")
+            if connection.dialect.name == "sqlite":
+                connection.exec_driver_sql("BEGIN" if snapshot else "BEGIN IMMEDIATE")
+            else:
+                if snapshot:
+                    connection = connection.execution_options(isolation_level="REPEATABLE READ")
+                connection.begin()
+            connection.info["afds_write_transaction"] = not snapshot
             try:
                 yield connection
                 connection.commit()
             except BaseException:
                 connection.rollback()
                 raise
+            finally:
+                connection.info.pop("afds_write_transaction", None)

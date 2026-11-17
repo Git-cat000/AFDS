@@ -22,6 +22,8 @@ opentimelineio==0.18.1
 packaging==26.3
 pillow==12.3.0
 pluggy==1.7.0
+psycopg==3.3.9
+psycopg-binary==3.3.9
 pycparser==3.12
 pydantic-core==2.50.2
 pydantic-settings==2.16.2
@@ -35,4 +37,5 @@ sqlalchemy==2.0.57
 starlette==1.10.0
 typing-extensions==4.16.0
 typing-inspection==0.4.5
+tzdata==2026.6; sys_platform == "win32"
 uvicorn==0.54.0

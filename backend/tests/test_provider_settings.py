@@ -24,12 +24,19 @@ def test_provider_settings_persist_without_exposing_credentials(client):
     assert len(settings["providers"]) == 5
     assert settings["defaults"]["llm"] == "mock-director"
     assert "test-only-credential" not in str(settings)
-    path = client.app.state.settings.database_url.removeprefix("sqlite:///")
     from pathlib import Path
 
-    assert b"test-only-credential" not in Path(path).read_bytes()
+    address = client.app.state.settings.database_url
+    if address.startswith("sqlite:///"):
+        assert b"test-only-credential" not in Path(address.removeprefix("sqlite:///")).read_bytes()
+    from sqlalchemy import select
+
+    from app import db
     from app.provider_settings import ProviderStore
 
+    with client.app.state.database.engine.connect() as connection:
+        stored = connection.execute(select(db.provider_configs)).mappings().all()
+        assert "test-only-credential" not in str(stored)
     store = ProviderStore(client.app.state.database)
     assert store.runtime("llm")["api_key"] == "test-only-credential"
 

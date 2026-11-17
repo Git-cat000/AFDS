@@ -125,7 +125,7 @@ class ProviderStore:
         directory = self.database.settings.data_dir / "secrets"
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / "provider.key"
-        # Called while holding the SQLite write lock when creating the first key.
+        # Configuration writes hold the database's provider-store lock for first-key creation.
         if not path.exists():
             descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(descriptor, "wb") as handle:
@@ -182,6 +182,7 @@ class ProviderStore:
             else [],
         }
         with self.database.transaction() as connection:
+            db.lock_named_resource(connection, "provider-store")
             previous = connection.execute(
                 select(db.preferences.c.payload).where(db.preferences.c.id == key)
             ).scalar_one_or_none()
@@ -200,6 +201,7 @@ class ProviderStore:
                 connection.execute(insert(db.preferences).values(id=key, payload=payload))
 
     def mark_media_verified(self, connection, config, media_type):
+        db.lock_named_resource(connection, "provider-store")
         key = f"provider-health:{config['kind']}:{config['revision']}"
         payload = {
             "status": "connected",
@@ -238,6 +240,7 @@ class ProviderStore:
                 422,
             )
         with self.database.transaction() as connection:
+            db.lock_named_resource(connection, "provider-store")
             old = (
                 connection.execute(
                     select(db.provider_configs).where(db.provider_configs.c.id == kind)
@@ -356,6 +359,7 @@ class ProviderStore:
                 )
             self.snapshot(provider_id, CAPABILITIES[kind])
         with self.database.transaction() as connection:
+            db.lock_named_resource(connection, "provider-store")
             old = connection.execute(
                 select(db.preferences.c.payload).where(db.preferences.c.id == "providers")
             ).scalar_one_or_none()

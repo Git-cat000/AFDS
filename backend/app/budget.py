@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Annotated
 
 from pydantic import Field
-from sqlalchemy import insert, select, update
+from sqlalchemy import BigInteger, insert, select, update
 
 from app import db
 from app.errors import DomainError
@@ -57,8 +57,8 @@ class BudgetService:
             rows = connection.execute(
                 select(
                     payload["currency"].as_string(),
-                    payload["actual_micros"].as_integer(),
-                    payload["estimate_micros"].as_integer(),
+                    payload["actual_micros"].as_string().cast(BigInteger),
+                    payload["estimate_micros"].as_string().cast(BigInteger),
                     payload["state"].as_string(),
                 ).where(db.cost_entries.c.project_id == str(apr["project_id"]))
             )
@@ -149,6 +149,7 @@ class BudgetService:
             )
 
     def reserve(self, connection, apr, reference, config):
+        db.lock_project(connection, apr["project_id"])
         self.enforce(apr, config)
         estimate = config.get("request_cost")
         currency = config.get("cost_currency", "USD")
