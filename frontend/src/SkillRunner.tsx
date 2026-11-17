@@ -26,6 +26,7 @@ export function SkillRunner({
   const [script, setScript] = useState(skill.scripts[0]?.path || "");
   const [argumentsText, setArgumentsText] = useState("[]");
   const [timeout, setTimeout] = useState(60);
+  const [mode, setMode] = useState<"local-user" | "container">("local-user");
   const [onlyShot, setOnlyShot] = useState(false);
   const [preview, setPreview] = useState<ScriptPlan>();
   const [consent, setConsent] = useState(false);
@@ -42,6 +43,21 @@ export function SkillRunner({
         <p className="muted">该技能包没有可运行脚本。</p>
       ) : (
         <>
+          <label>
+            执行环境
+            <select
+              aria-label="执行环境"
+              value={mode}
+              disabled={busy}
+              onChange={(event) => {
+                setMode(event.target.value as "local-user" | "container");
+                changed();
+              }}
+            >
+              <option value="local-user">本机用户</option>
+              <option value="container">隔离容器</option>
+            </select>
+          </label>
           <label>
             运行脚本
             <select
@@ -121,6 +137,7 @@ export function SkillRunner({
                       script_path: script,
                       arguments: argumentsValue,
                       timeout_seconds: timeout,
+                      execution_mode: mode,
                       stage,
                       shot_ids: onlyShot && shotId ? [shotId] : [],
                     },
@@ -155,12 +172,43 @@ export function SkillRunner({
                   )}
                 </pre>
               </details>
+              {preview.request.execution_mode === "container" ? (
+                <>
+                  <p>隔离容器 · 网络关闭 · 只读技能包与输入 · 非 root 身份。</p>
+                  <p>
+                    1 CPU · 内存 512 MiB · 64 个进程 · 临时工作区 64 MiB ·
+                    输出区 32 MiB。
+                  </p>
+                  {preview.request.execution_policy?.image_id && (
+                    <small>
+                      镜像 {preview.request.execution_policy.image_id}
+                    </small>
+                  )}
+                  <small>
+                    策略 SHA256 {preview.request.execution_policy_sha256}
+                  </small>
+                  <p>
+                    执行前会验证实际资源限制，运行记录保留解释器版本与策略。
+                  </p>
+                </>
+              ) : (
+                <p>
+                  脚本以当前本机用户权限运行，能够访问该用户的文件与网络。调用的外部服务及费用由脚本决定。
+                </p>
+              )}
               <p>
-                脚本以当前本机用户权限运行，能够访问该用户的文件与网络。调用的外部服务及费用由脚本决定。输入通过标准输入、input.json
-                和 AFDS_CONTEXT_FILE 提供，outputs/ 中的结果可下载。
+                输入通过标准输入、input.json 和 AFDS_CONTEXT_FILE 提供，outputs/
+                中的结果可下载。
               </p>
               {!preview.runtime.available && (
-                <p role="alert">本机缺少所需解释器，请安装后重新预览。</p>
+                <p role="alert">
+                  {preview.runtime.error
+                    ? `${preview.runtime.error.code} · ${preview.runtime.error.message}。恢复后重新预览。`
+                    : "本机缺少所需解释器，请安装后重新预览。"}
+                </p>
+              )}
+              {!preview.request.execution_mode && (
+                <p role="alert">执行协议已更新，请重新预览本次脚本运行。</p>
               )}
               {stale && (
                 <p role="alert">工程修订已变化，请重新预览本次脚本运行。</p>
@@ -172,7 +220,9 @@ export function SkillRunner({
                   disabled={busy || !!stale || !!submitted}
                   onChange={(event) => setConsent(event.target.checked)}
                 />
-                已审阅源码和参数，允许以本机用户权限运行本次脚本
+                {preview.request.execution_mode === "container"
+                  ? "已审阅源码和策略，允许在隔离容器中运行本次脚本"
+                  : "已审阅源码和参数，允许以本机用户权限运行本次脚本"}
               </label>
               <button
                 className="primary"
@@ -181,6 +231,7 @@ export function SkillRunner({
                   !consent ||
                   !!stale ||
                   !preview.runtime.available ||
+                  !preview.request.execution_mode ||
                   !!submitted
                 }
                 onClick={() =>

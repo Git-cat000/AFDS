@@ -32,14 +32,14 @@ const skill = {
   ],
   scripts: [{ path: "scripts/inspect.py", size: 50, sha256: identifier }],
 };
-function setup() {
+function setup(containerAvailable = true, running = false) {
   const project = {
     project_id: "project",
     revision: 7,
     production_guidance: {},
     shots: [],
   } as unknown as Project;
-  const fetcher = vi.fn(async (url: string) => {
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
     let data: unknown = {};
     if (url.includes("/skills?"))
       data = {
@@ -50,17 +50,56 @@ function setup() {
       };
     else if (url.endsWith(`/skills/${identifier}`)) data = skill;
     else if (url.includes("/skills/runs?"))
-      data = { items: [], total: 0, offset: 0 };
+      data = {
+        items: running
+          ? [
+              {
+                id: "script-job",
+                state: "running",
+                operation: "run_skill_script",
+                source_revision: 7,
+                request: {
+                  execution_mode: "container",
+                  script_path: "scripts/inspect.py",
+                },
+              },
+            ]
+          : [],
+        total: running ? 1 : 0,
+        offset: 0,
+      };
     else if (url.endsWith("/guidance/preview"))
       data = { changes: [], affected_shot_ids: [] };
-    else if (url.endsWith("/scripts/preview"))
+    else if (url.endsWith("/scripts/preview")) {
+      const mode = JSON.parse(String(init?.body)).execution_mode;
       data = {
         id: "script-plan",
         base_revision: 7,
         fingerprint: identifier,
         source_code: "print('DEMO approved')",
-        runtime: { name: "Python", available: true },
+        runtime: {
+          name: "Python",
+          available: mode !== "container" || containerAvailable,
+          error:
+            mode === "container" && !containerAvailable
+              ? { code: "SANDBOX_UNAVAILABLE", message: "DEMO Docker offline" }
+              : null,
+        },
         request: {
+          execution_mode: mode,
+          execution_policy_sha256: identifier,
+          execution_policy:
+            mode === "container"
+              ? {
+                  image_id: `sha256:${identifier}`,
+                  cpu_limit: 1,
+                  memory_bytes: 536870912,
+                  pids_limit: 64,
+                  work_bytes: 67108864,
+                  output_bytes: 33554432,
+                  network: "none",
+                }
+              : null,
           package_id: identifier,
           script_path: "scripts/inspect.py",
           arguments: [],
@@ -69,7 +108,7 @@ function setup() {
           context: { stage: "shots" },
         },
       };
-    else if (url.endsWith("/execute"))
+    } else if (url.endsWith("/execute"))
       data = { id: "script-job", state: "queued" };
     return new Response(JSON.stringify(data));
   });
@@ -179,4 +218,76 @@ it("discards a script preview when its argument draft changes", async () => {
   expect(
     screen.queryByRole("button", { name: "批准并运行本次脚本" }),
   ).toBeNull();
+});
+
+it("shows pinned container limits and requires container-specific consent", async () => {
+  const { fetcher } = setup();
+  fireEvent.click(await screen.findByRole("button", { name: "脚本与运行" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "执行环境" }), {
+    target: { value: "container" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "预览脚本运行" }));
+  await screen.findByText(/512 MiB/);
+  expect(bodies(fetcher, "/scripts/preview")[0].execution_mode).toBe(
+    "container",
+  );
+  const approve = screen.getByRole("button", { name: "批准并运行本次脚本" });
+  expect((approve as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(
+    screen.getByRole("checkbox", {
+      name: "已审阅源码和策略，允许在隔离容器中运行本次脚本",
+    }),
+  );
+  fireEvent.click(approve);
+  await waitFor(() => expect(bodies(fetcher, "/execute")).toHaveLength(1));
+});
+
+it("preserves unavailable container preview with its reason and disables approval", async () => {
+  setup(false);
+  fireEvent.click(await screen.findByRole("button", { name: "脚本与运行" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "执行环境" }), {
+    target: { value: "container" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "预览脚本运行" }));
+  await screen.findByText(/DEMO Docker offline/);
+  expect(screen.getByLabelText("待运行脚本源码").textContent).toContain(
+    "DEMO approved",
+  );
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "批准并运行本次脚本",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+});
+
+it("clears prior consent and preview when execution mode changes", async () => {
+  setup();
+  fireEvent.click(await screen.findByRole("button", { name: "脚本与运行" }));
+  fireEvent.click(screen.getByRole("button", { name: "预览脚本运行" }));
+  fireEvent.click(
+    await screen.findByRole("checkbox", {
+      name: "已审阅源码和参数，允许以本机用户权限运行本次脚本",
+    }),
+  );
+  fireEvent.change(screen.getByRole("combobox", { name: "执行环境" }), {
+    target: { value: "container" },
+  });
+  expect(
+    screen.queryByRole("button", { name: "批准并运行本次脚本" }),
+  ).toBeNull();
+});
+
+it("cancels a running skill through the POST cancellation endpoint", async () => {
+  const { fetcher } = setup(true, true);
+  fireEvent.click(await screen.findByRole("button", { name: "脚本与运行" }));
+  fireEvent.click(await screen.findByRole("button", { name: "取消此次运行" }));
+  await waitFor(() =>
+    expect(fetcher.mock.calls.some(([url]) => url.endsWith("/cancel"))).toBe(
+      true,
+    ),
+  );
+  const call = fetcher.mock.calls.find(([url]) => url.endsWith("/cancel"));
+  expect(call?.[1]?.method).toBe("POST");
 });

@@ -494,7 +494,9 @@ class Queue:
                 job = serialize(row)
                 if job["state"] == "cancel_requested":
                     self.set_state(connection, job, "cancelled")
-                elif job["operation"] == "run_skill_script" and job.get("script_started"):
+                elif job["operation"] == "run_skill_script" and (
+                    job.get("script_started") or job.get("sandbox_run")
+                ):
                     self.set_state(
                         connection,
                         job,

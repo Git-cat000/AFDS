@@ -94,9 +94,9 @@ Docker 的只读文件系统、网络与资源选项作为实现依据。Rootles
 - 本机原有 `local-user` 执行方式保留明确的逐次权限确认。团队模式采用 `container` 策略，执行入口按项目权限决定。
 - 既有未执行预览在协议升级后提示刷新，已完成任务继续显示历史执行方式。
 
-- [ ] 添加失败测试 `test_script_approval_pins_container_policy`、`test_repeated_container_approval_reuses_job` 和 `test_unavailable_container_preserves_proposal`。相同方案并发批准返回同一任务。策略或镜像更换导致批准失效。容器模式不可用时展示原因并保留草稿。旧任务显示完整历史信息。
-- [ ] 定向执行新测试及 `test_skill_execution.py`，记录新增失败。
-- [ ] 修改预览、批准、Worker 分派与前端类型，复用当前脚本启动意图持久化和租约围栏。执行日志和结果记录实际策略。
-- [ ] 完成桌面与移动端真实浏览器流程，审阅源码和权限、批准容器任务、取消任务、下载归属正确的结果。验证本机旧入口与新容器入口均有明确状态。
-- [ ] 执行本子计划和生产技能回归测试，更新 `docs/SKILLS.md`、API、PROGRESS 与 `.ai/`，完成 M3 验收后精确提交。
+- [x] 添加失败测试 `test_script_approval_pins_container_policy`、`test_repeated_container_approval_reuses_job` 和 `test_unavailable_container_preserves_proposal`。相同方案并发批准返回同一任务。策略或镜像更换导致批准失效。容器模式不可用时展示原因并保留草稿。旧任务显示完整历史信息。
+- [x] 定向执行新测试及 `test_skill_execution.py`，记录新增失败。
+- [x] 修改预览、批准、Worker 分派与前端类型，复用当前脚本启动意图持久化和租约围栏。执行日志和结果记录实际策略。
+- [x] 完成桌面与移动端真实浏览器流程，审阅源码和权限、批准容器任务、取消任务、下载归属正确的结果。验证本机旧入口与新容器入口均有明确状态。
+- [x] 执行本子计划和生产技能回归测试，更新 `docs/SKILLS.md`、API、PROGRESS 与 `.ai/`，完成 M3 验收后精确提交。
 

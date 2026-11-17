@@ -118,6 +118,7 @@ class ProductionCheckRequest(RevisionRequest):
 
 
 class ScriptPreviewRequest(ProductionCheckRequest):
+    execution_mode: Literal["local-user", "container"] = "local-user"
     package_id: Digest
     script_path: str = Field(min_length=1, max_length=240)
     arguments: list[

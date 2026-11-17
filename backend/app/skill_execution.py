@@ -5,12 +5,13 @@ import hashlib
 import json
 import os
 import stat
+import time
 
 from sqlalchemy import func, insert, select, update
 
-from app import db
+from app import db, skill_sandbox
 from app.errors import DomainError
-from app.execution.queue import Queue, digest, public_job
+from app.execution.queue import TERMINAL, Queue, digest, public_job
 from app.history_service import owned_header
 from app.project_engine import ProjectEngine, emit, find
 from app.schemas import new_id
@@ -21,6 +22,30 @@ from app.skill_schema import add_guidance
 from app.storage import contained, file_hash
 
 OPERATIONS = {"check_production", "run_skill_script"}
+
+
+def execution_preview(settings, body):
+    runtime = interpreter(body.script_path)
+    available = bool(runtime["executable"])
+    problem = None
+    if body.execution_mode == "container":
+        try:
+            policy = skill_sandbox.execution_policy(settings, body.timeout_seconds).model_dump(
+                mode="json"
+            )
+            available = True
+        except DomainError as error:
+            policy, available = None, False
+            problem = {"code": error.code, "message": error.message}
+    else:
+        policy = {
+            "mode": "local-user",
+            "policy_version": "afds-local-user-v1",
+            "timeout_seconds": body.timeout_seconds,
+            "filesystem": "user",
+            "network": "user",
+        }
+    return policy, {"name": runtime["name"], "available": available, "error": problem}
 
 
 def selected_shots(apr, identifiers):
@@ -148,7 +173,7 @@ class SkillExecution:
             raise DomainError(
                 "SCRIPT_ENCODING", "Use UTF-8 script source for review", 422
             ) from error
-        runtime = interpreter(body.script_path)
+        policy, runtime = execution_preview(self.database.settings, body)
         with self.database.transaction() as connection:
             apr = self.engine.load(connection, project_id)
             self.engine.check_revision(apr, body.base_revision)
@@ -159,6 +184,9 @@ class SkillExecution:
                 "script_sha256": script["sha256"],
                 "arguments": body.arguments,
                 "timeout_seconds": body.timeout_seconds,
+                "execution_mode": body.execution_mode,
+                "execution_policy": policy,
+                "execution_policy_sha256": digest(policy),
                 "stage": body.stage,
                 "context": script_context(apr, body.stage, body.shot_ids),
                 "provider_id": "local-skill-script",
@@ -173,7 +201,7 @@ class SkillExecution:
                 "fingerprint": digest(request),
                 "request": request,
                 "source_code": source,
-                "runtime": {"name": runtime["name"], "available": bool(runtime["executable"])},
+                "runtime": runtime,
                 "resources": package["resources"],
             }
             connection.execute(
@@ -208,9 +236,27 @@ class SkillExecution:
                 )
             if plan.get("job_id"):
                 return public_job(self.queue.get(connection, project_id, plan["job_id"]))
+            request = plan["request"]
+            if "execution_mode" not in request:
+                raise DomainError(
+                    "SCRIPT_PREVIEW_EXPIRED",
+                    "Refresh this preview for the current run protocol",
+                    409,
+                )
             self.engine.check_revision(apr, body.base_revision)
-            self.library.get(plan["request"]["package_id"])
-            if not interpreter(plan["request"]["script_path"])["executable"]:
+            self.library.get(request["package_id"])
+            source = self.library.resource(request["package_id"], request["script_path"])
+            if hashlib.sha256(source).hexdigest() != request["script_sha256"]:
+                raise DomainError("HASH_MISMATCH", "Approved script source changed", 409)
+            if request["execution_mode"] == "container":
+                current = skill_sandbox.execution_policy(
+                    self.database.settings, request["timeout_seconds"]
+                )
+                if skill_sandbox.policy_digest(current) != request["execution_policy_sha256"]:
+                    raise DomainError(
+                        "SANDBOX_POLICY_CHANGED", "Preview the current container policy again", 409
+                    )
+            elif not interpreter(request["script_path"])["executable"]:
                 raise DomainError(
                     "SCRIPT_INTERPRETER_MISSING",
                     "Install the declared interpreter before approving this run",
@@ -237,6 +283,8 @@ class SkillExecution:
                     "fingerprint": plan["fingerprint"],
                     "package_id": plan["request"]["package_id"],
                     "script_sha256": plan["request"]["script_sha256"],
+                    "execution_mode": request["execution_mode"],
+                    "execution_policy_sha256": request["execution_policy_sha256"],
                 },
             )
             return public_job(job)
@@ -284,6 +332,42 @@ class SkillExecution:
         source = contained(work, request["script_path"])
         if file_hash(source) != request["script_sha256"]:
             raise DomainError("HASH_MISMATCH", "Approved script source changed", 409)
+        mode = request.get("execution_mode", "local-user")
+        if mode == "container":
+            policy = skill_sandbox.ScriptExecutionPolicy.model_validate(request["execution_policy"])
+            if skill_sandbox.policy_digest(policy) != request["execution_policy_sha256"]:
+                raise DomainError("SANDBOX_POLICY_CHANGED", "Approved policy changed", 409)
+            result = skill_sandbox.run_container(
+                self.database.settings,
+                work,
+                request["script_path"],
+                request["arguments"],
+                request["context"],
+                policy,
+                checkpoint,
+                on_created=lambda handle: self.record_container(job, owner, handle),
+                before_start=lambda: self.mark_started(job, owner),
+            )
+            output_work = result.pop("output_dir").parent
+        else:
+            result = self.execute_local(job, owner, work, checkpoint)
+            output_work = work
+        result.update(
+            kind="script",
+            stage=request["stage"],
+            source_revision=job["source_revision"],
+            execution_mode=mode,
+            execution_policy_sha256=request.get("execution_policy_sha256"),
+            artifacts=[],
+        )
+        try:
+            result["artifacts"] = self.collect(job, output_work)
+        except DomainError as error:
+            result["error"] = {"code": error.code, "message": error.message}
+        return result
+
+    def execute_local(self, job, owner, work, checkpoint):
+        request = job["request"]
         context = json.dumps(request["context"], ensure_ascii=False).encode()
         (work / "input.json").write_bytes(context)
         (work / "outputs").mkdir(exist_ok=True)
@@ -296,6 +380,13 @@ class SkillExecution:
             from app.media import Cancelled
 
             raise Cancelled()
+        self.mark_started(job, owner)
+        source = contained(work, request["script_path"])
+        source_path = source.as_posix() if runtime["name"] == "Bash" else str(source)
+        arguments = [runtime["executable"], *runtime["options"], source_path, *request["arguments"]]
+        return run_script(arguments, work, context, request["timeout_seconds"], checkpoint)
+
+    def mark_started(self, job, owner):
         with self.database.transaction() as connection:
             current = self.queue.check_owned(connection, job, owner)
             payload = connection.execute(
@@ -310,20 +401,54 @@ class SkillExecution:
             connection.execute(
                 update(db.jobs).where(db.jobs.c.id == job["id"]).values(payload=payload)
             )
-        source_path = source.as_posix() if runtime["name"] == "Bash" else str(source)
-        arguments = [runtime["executable"], *runtime["options"], source_path, *request["arguments"]]
-        result = run_script(arguments, work, context, request["timeout_seconds"], checkpoint)
-        result.update(
-            kind="script",
-            stage=request["stage"],
-            source_revision=job["source_revision"],
-            artifacts=[],
-        )
-        try:
-            result["artifacts"] = self.collect(job, work)
-        except DomainError as error:
-            result["error"] = {"code": error.code, "message": error.message}
-        return result
+
+    def record_container(self, job, owner, handle):
+        with self.database.transaction() as connection:
+            current = self.queue.check_owned(connection, job, owner)
+            payload = connection.execute(
+                select(db.jobs.c.payload).where(db.jobs.c.id == job["id"])
+            ).scalar_one()
+            if current.get("script_started"):
+                raise DomainError("SCRIPT_RUN_UNCERTAIN", "Review and approve a new run", 409)
+            payload.update(sandbox_run=handle, sandbox_cleanup_pending=True)
+            payload.setdefault("sandbox_create_intent_at", time.time())
+            connection.execute(
+                update(db.jobs).where(db.jobs.c.id == job["id"]).values(payload=payload)
+            )
+
+    def reap_containers(self):
+        with self.database.engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(db.jobs)
+                    .where(
+                        db.jobs.c.payload["sandbox_cleanup_pending"].as_boolean().is_(True),
+                        (db.jobs.c.lease_expires_at.is_(None))
+                        | (db.jobs.c.lease_expires_at < time.time()),
+                    )
+                    .limit(128)
+                )
+                .mappings()
+                .all()
+            )
+        for row in rows:
+            handle = row["payload"].get("sandbox_run", {})
+            if not handle.get("run_id") or not skill_sandbox.cleanup_run(handle["run_id"]):
+                continue
+            if row["state"] not in TERMINAL or (
+                not handle.get("container_id")
+                and time.time() - row["payload"].get("sandbox_create_intent_at", 0) < 30
+            ):
+                continue
+            with self.database.transaction() as connection:
+                payload = connection.execute(
+                    select(db.jobs.c.payload).where(db.jobs.c.id == row["id"])
+                ).scalar_one()
+                if payload.get("sandbox_run") == handle:
+                    payload["sandbox_cleanup_pending"] = False
+                    connection.execute(
+                        update(db.jobs).where(db.jobs.c.id == row["id"]).values(payload=payload)
+                    )
 
     def collect(self, job, work):
         raw_root = work / "outputs"
@@ -441,8 +566,21 @@ class SkillExecution:
                 job["request"] = {
                     key: value
                     for key, value in job["request"].items()
-                    if key in {"stage", "skill_name", "script_path", "package_id"}
+                    if key
+                    in {
+                        "stage",
+                        "skill_name",
+                        "script_path",
+                        "package_id",
+                        "execution_mode",
+                        "execution_policy",
+                        "execution_policy_sha256",
+                    }
                 }
+                if job["operation"] == "run_skill_script":
+                    job["request"].setdefault("execution_mode", "local-user")
+                    if job.get("skill_result"):
+                        job["skill_result"].setdefault("execution_mode", "local-user")
                 if job.get("skill_result"):
                     job["skill_result"]["stale"] = header["revision"] != job["source_revision"]
                 items.append(job)

@@ -56,9 +56,21 @@ export function SkillRuns({
             </span>
           </header>
           {job.operation === "run_skill_script" && (
-            <small>
-              外部调用费用由脚本管理，AFDS 费用账本统计已注册的模型请求。
-            </small>
+            <>
+              <small>
+                {job.request?.execution_mode === "container"
+                  ? "隔离容器 · 网络关闭"
+                  : "本机用户权限 · 外部调用费用由脚本管理"}
+              </small>
+              {job.skill_result?.actual_policy && (
+                <details>
+                  <summary>实际执行策略与解释器版本</summary>
+                  <pre>
+                    {JSON.stringify(job.skill_result.actual_policy, null, 2)}
+                  </pre>
+                </details>
+              )}
+            </>
           )}
           {job.source_revision !== project.revision && (
             <p className="muted">工程已更新，这份结果对应较早修订。</p>
@@ -75,7 +87,10 @@ export function SkillRuns({
               disabled={busy}
               onClick={() =>
                 void perform(() =>
-                  api(`/projects/${project.project_id}/jobs/${job.id}/cancel`),
+                  api(
+                    `/projects/${project.project_id}/jobs/${job.id}/cancel`,
+                    {},
+                  ),
                 )
               }
             >

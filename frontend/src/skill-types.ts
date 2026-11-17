@@ -49,6 +49,9 @@ export type SkillResult = {
   kind: "script" | "check";
   stage: ProductionStage;
   source_revision: number;
+  execution_mode?: "local-user" | "container";
+  actual_policy?: Record<string, unknown>;
+  execution_policy_sha256?: string;
   stale?: boolean;
   exit_code?: number;
   stdout?: string;
@@ -66,7 +69,13 @@ export type SkillResult = {
   artifacts?: { id: string; name: string; sha256: string; size: number }[];
 };
 export type SkillRun = Job & {
-  request?: { skill_name?: string; script_path?: string };
+  request?: {
+    skill_name?: string;
+    script_path?: string;
+    execution_mode?: "local-user" | "container";
+    execution_policy?: Record<string, unknown>;
+    execution_policy_sha256?: string;
+  };
   source_revision: number;
   skill_result?: SkillResult;
 };
@@ -75,8 +84,23 @@ export type ScriptPlan = {
   base_revision: number;
   fingerprint: string;
   source_code: string;
-  runtime: { name: string; available: boolean };
+  runtime: {
+    name: string;
+    available: boolean;
+    error?: { code: string; message: string } | null;
+  };
   request: {
+    execution_mode?: "local-user" | "container";
+    execution_policy_sha256?: string;
+    execution_policy?: {
+      image_id?: string;
+      cpu_limit?: number;
+      memory_bytes?: number;
+      pids_limit?: number;
+      work_bytes?: number;
+      output_bytes?: number;
+      network: string;
+    } | null;
     package_id: string;
     script_path: string;
     arguments: string[];

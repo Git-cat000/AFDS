@@ -201,7 +201,7 @@ def prepare_run(settings, package, script, arguments, context, policy, nonce):
     context_data = json.dumps(context, ensure_ascii=False, allow_nan=False).encode()
     if (
         len(context_data) > 512 * 1024
-        or len(arguments) > 32
+        or len(arguments) > 50
         or any(not isinstance(value, str) or len(value) > 4096 for value in arguments)
     ):
         raise DomainError(
@@ -305,6 +305,8 @@ def run_container(
     actual = {}
     output_dir = root / "result" / "outputs"
     try:
+        if on_created:
+            on_created({"container_id": None, "run_id": nonce})
         raw = docker_command(
             [
                 "create",
@@ -491,6 +493,8 @@ def run_container(
                 docker_command(["rm", "--force", container_id], timeout=5)
             except DomainError:
                 pass
+        else:
+            cleanup_run(nonce)
         if process:
             if process.poll() is None:
                 process.kill()

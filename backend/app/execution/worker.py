@@ -28,6 +28,8 @@ class Worker:
         self.last_pulse = 0
 
     def run_once(self):
+        from app.skill_execution import SkillExecution
+
         if time.time() - self.last_pulse >= 5:
             from app.operations_service import pulse_worker
 
@@ -35,6 +37,7 @@ class Worker:
                 pulse_worker(connection, self.owner)
             self.last_pulse = time.time()
         job = self.queue.claim(self.owner)
+        SkillExecution(self.database).reap_containers()
         if job is None:
             return False
         started = time.monotonic()
@@ -250,6 +253,7 @@ class Worker:
             job["project_id"],
             int((time.monotonic() - started) * 1000),
         )
+        SkillExecution(self.database).reap_containers()
         return True
 
     def run_remote(self, job, work):
