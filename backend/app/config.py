@@ -1,5 +1,6 @@
 import shutil
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,6 +18,9 @@ class Settings(BaseSettings):
     media_timeout: int = 180
     max_job_attempts: int = 2
     sandbox_image_id: str = ""
+    mode: Literal["local", "team"] = "local"
+    secure_cookies: bool = True
+    session_hours: int = 8
 
     def model_post_init(self, context):
         self.data_dir = (ROOT / self.data_dir).resolve()

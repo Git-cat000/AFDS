@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request
 from sqlalchemy import select
 
 from app import db, director
+from app.access import AccessRoute
 from app.project_engine import ProjectEngine, rebuild_timeline
 from app.schemas import (
     APR,
@@ -22,7 +23,7 @@ from app.schemas import (
     TimelineRequest,
 )
 
-router = APIRouter()
+router = APIRouter(route_class=AccessRoute)
 
 
 def engine(request: Request):
@@ -42,11 +43,17 @@ def import_project(body: APR, request: Request):
 @router.get("/projects")
 def list_projects(request: Request):
     with request.app.state.database.engine.connect() as connection:
-        return list(
-            connection.execute(
-                select(db.projects.c.payload).where(db.projects.c.archived.is_(False))
-            ).scalars()
-        )
+        conditions = [db.projects.c.archived.is_(False)]
+        if request.app.state.settings.mode == "team":
+            conditions.append(
+                select(db.project_members.c.user_id)
+                .where(
+                    db.project_members.c.project_id == db.projects.c.id,
+                    db.project_members.c.user_id == request.state.principal.user_id,
+                )
+                .exists()
+            )
+        return list(connection.execute(select(db.projects.c.payload).where(*conditions)).scalars())
 
 
 @router.get("/projects/{project_id}")
@@ -82,6 +89,17 @@ def changeset(project_id: UUID, mode: str, body: ChangeSet, request: Request):
 
     if mode not in {"preview", "commit"}:
         raise DomainError("NOT_FOUND", "Unknown changeset operation", 404)
+    if getattr(request.state, "project_role", "owner") == "reviewer" and any(
+        operation.op != "set"
+        or operation.entity_type != "shot"
+        or operation.field not in {"active_asset_version_id", "status"}
+        or (
+            operation.field == "status"
+            and operation.value not in ("approved", "needs_review", "ready")
+        )
+        for operation in body.operations
+    ):
+        raise DomainError("ACCESS_DENIED", "Reviewers can select and approve shot candidates", 403)
     return engine(request).changeset(project_id, body, commit=mode == "commit")
 
 

@@ -2,9 +2,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
 
+from app.access import AccessRoute
 from app.feedback_service import FeedbackRequest, FeedbackService
 
-router = APIRouter(prefix="/projects/{project_id}/feedback")
+router = APIRouter(prefix="/projects/{project_id}/feedback", route_class=AccessRoute)
 
 
 @router.post("", status_code=201)

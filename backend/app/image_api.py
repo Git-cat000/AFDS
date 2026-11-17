@@ -4,13 +4,14 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Query, Request
 
+from app.access import AccessRoute
 from app.errors import DomainError
 from app.execution.queue import Queue, public_job
 from app.image_service import MAX_IMAGE_BYTES
 from app.project_engine import ProjectEngine
 from app.storage import contained, ensure_space
 
-router = APIRouter(prefix="/projects/{project_id}/images")
+router = APIRouter(prefix="/projects/{project_id}/images", route_class=AccessRoute)
 
 
 @router.post("/import", status_code=202)

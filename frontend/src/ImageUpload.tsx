@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, ApiError } from "./api";
+import { api, ApiError, sessionFetch } from "./api";
 import { useQuery } from "@tanstack/react-query";
 import type { Job, Project } from "./types";
 
@@ -66,7 +66,7 @@ export function ImageUpload({
               name: file.name,
               rights_confirmed: "true",
             });
-            const response = await fetch(
+            const response = await sessionFetch(
               `/api/v1/projects/${project.project_id}/images/import?${params}`,
               {
                 method: "POST",

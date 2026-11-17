@@ -2,11 +2,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Request
 
+from app.access import AccessRoute
 from app.continuity import ContinuityService
 from app.continuity_schema import ContinuityChange, SemanticEditRequest
 from app.schemas import RevisionRequest
 
-router = APIRouter()
+router = APIRouter(route_class=AccessRoute)
 
 
 def service(request):

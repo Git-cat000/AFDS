@@ -2,10 +2,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Request
 
+from app.access import AccessRoute
 from app.workspace_schema import WorkspaceUpdate
 from app.workspace_service import WorkspaceService
 
-router = APIRouter(prefix="/projects/{project_id}/workspace")
+router = APIRouter(prefix="/projects/{project_id}/workspace", route_class=AccessRoute)
 
 
 @router.get("")

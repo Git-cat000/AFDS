@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { AudioLines, Plus, Subtitles, Upload, VolumeX } from "lucide-react";
-import { api, mediaUrl } from "./api";
+import { api, mediaUrl, sessionFetch } from "./api";
 import { VideoCompositionEditor } from "./VideoCompositionEditor";
 import { AudioAnalysisPanel } from "./AudioAnalysisPanel";
 import type { VideoLayerTrack, VideoTransition } from "./types";
@@ -347,7 +347,7 @@ function TimelineAudioEditor({
                   name: file.name,
                   rights_confirmed: "true",
                 });
-                const response = await fetch(
+                const response = await sessionFetch(
                   `/api/v1/projects/${project.project_id}/timeline/audio/import?${query}`,
                   {
                     method: "POST",

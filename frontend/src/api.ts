@@ -1,5 +1,31 @@
 import type { Job } from "./types";
 
+let sessionCsrf: string | undefined;
+
+export function setSessionCsrf(value: string | undefined) {
+  sessionCsrf = value;
+}
+
+export async function sessionFetch(input: string, options: RequestInit = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  const internal = input.startsWith("/api/v1/");
+  let requestOptions = options;
+  if (internal && sessionCsrf && !["GET", "HEAD", "OPTIONS"].includes(method)) {
+    const headers = new Headers(options.headers);
+    headers.set("X-CSRF-Token", sessionCsrf);
+    requestOptions = { ...options, headers };
+  }
+  const response = await fetch(input, requestOptions);
+  if (
+    response.status === 401 &&
+    internal &&
+    !String(input).endsWith("/auth/login") &&
+    typeof window !== "undefined"
+  )
+    window.dispatchEvent(new Event("afds-session-expired"));
+  return response;
+}
+
 export class ApiError extends Error {
   constructor(
     public code: string,
@@ -38,7 +64,7 @@ export async function api<T>(
   method?: string,
 ): Promise<T> {
   const binary = body instanceof Blob;
-  const response = await fetch(`/api/v1${path}`, {
+  const response = await sessionFetch(`/api/v1${path}`, {
     method: method || (body === undefined ? "GET" : "POST"),
     headers: {
       "Content-Type": binary
@@ -50,6 +76,14 @@ export async function api<T>(
   const data = await response.json();
   if (!response.ok) {
     const messages: Record<string, string> = {
+      AUTH_REQUIRED: "登录已过期，请重新登录。",
+      INVALID_CREDENTIALS: "用户名或密码不正确。",
+      LOGIN_RATE_LIMIT: "登录尝试过于频繁，请稍后再试。",
+      CSRF_INVALID: "会话已更新，请刷新页面后重新提交。",
+      ACCESS_DENIED: "当前项目角色没有此操作权限。",
+      ADMIN_REQUIRED: "此功能需要管理员权限。",
+      ACCESS_REVOKED: "任务审批者的执行权限已撤销，请由有权限的成员重新批准。",
+      LAST_OWNER: "项目需要保留至少一名所有者。",
       STORAGE_FULL: "本机存储空间不足，请腾出空间后重试。",
       REFERENCE_INPUT_UNSUPPORTED:
         "当前模型接口未映射所选图像输入，请在 ComfyUI 工作流设置中配置相应参考图角色。",
@@ -118,7 +152,7 @@ export async function restoreArchive(
     request_id: requestId,
     approved: "true",
   });
-  const response = await fetch(`/api/v1/projects/restore?${params}`, {
+  const response = await sessionFetch(`/api/v1/projects/restore?${params}`, {
     method: "POST",
     headers: { "Content-Type": "application/zip" },
     body: file,

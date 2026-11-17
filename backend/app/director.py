@@ -1,6 +1,6 @@
 import copy
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import select, update
 
 from app import db
 from app.errors import DomainError
@@ -107,9 +107,7 @@ def propose(engine, project_id, body):
                 BudgetService(engine.database).finalize(connection, charge_id, submitted)
     with engine.database.transaction() as connection:
         engine.check_revision(engine.load(connection, project_id), body.base_revision)
-        connection.execute(
-            insert(db.plans).values(id=plan["id"], project_id=str(project_id), payload=plan)
-        )
+        engine.store_plan(connection, project_id, plan)
         return plan
 
 

@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Query, Request
 from pydantic import Field
 
+from app.access import AccessRoute
 from app.audio_pipeline import MAX_UPLOAD_BYTES
 from app.errors import DomainError
 from app.storage import contained, ensure_space
@@ -18,7 +19,7 @@ from app.timeline_service import (
     TimelineService,
 )
 
-router = APIRouter(prefix="/projects/{project_id}/timeline")
+router = APIRouter(prefix="/projects/{project_id}/timeline", route_class=AccessRoute)
 
 
 class PreviewRequest(TimelineModel):

@@ -2,9 +2,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
 
+from app.access import AccessRoute
 from app.analysis_service import AnalysisRequest, AnalysisService, ApplyAnalysis
 
-router = APIRouter(prefix="/projects/{project_id}/timeline/analysis")
+router = APIRouter(prefix="/projects/{project_id}/timeline/analysis", route_class=AccessRoute)
 
 
 @router.get("")

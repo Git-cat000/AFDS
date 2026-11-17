@@ -9,6 +9,7 @@ from sqlalchemy import insert, select, update
 from app import db
 from app.adapters import check_provider
 from app.errors import DomainError
+from app.identity_context import actor_id
 from app.project_engine import ProjectEngine, emit, find
 from app.schemas import Format, new_id
 from app.skill_schema import add_guidance
@@ -140,6 +141,7 @@ class Queue:
                 result["reused_from_job_id"] = result["id"]
             return result
         payload = {
+            "actor_id": actor_id(self.database.settings),
             "operation": operation,
             "target_entity_id": target,
             "request": request,
@@ -419,6 +421,7 @@ class Queue:
                 "queued",
                 external_task_id=body.external_task_id,
                 submission_started=True,
+                execution_actor_id=actor_id(self.database.settings),
                 budget_entry_id=entry_id,
                 error=None,
             )
@@ -692,7 +695,15 @@ class Queue:
                     "remote_resubmit",
                     {"job_id": job["id"], "cost_status": "unknown"},
                 )
-            self.set_state(connection, job, "queued", error=None, progress=0, **fields)
+            self.set_state(
+                connection,
+                job,
+                "queued",
+                error=None,
+                progress=0,
+                execution_actor_id=actor_id(self.database.settings),
+                **fields,
+            )
             connection.execute(
                 update(db.jobs)
                 .where(db.jobs.c.id == str(job_id))

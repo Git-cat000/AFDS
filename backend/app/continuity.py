@@ -5,7 +5,7 @@ import hashlib
 import json
 
 from pydantic import ValidationError
-from sqlalchemy import insert, select, update
+from sqlalchemy import select, update
 
 from app import db
 from app.continuity_schema import (
@@ -343,9 +343,7 @@ class ContinuityService:
         }
 
     def _store(self, connection, project_id, plan):
-        connection.execute(
-            insert(db.plans).values(id=plan["id"], project_id=str(project_id), payload=plan)
-        )
+        self.engine.store_plan(connection, project_id, plan)
         return plan
 
     def _plan(self, connection, project_id, plan_id, kind):

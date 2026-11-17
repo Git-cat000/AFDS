@@ -3,10 +3,11 @@ from uuid import UUID
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from app.access import AccessRoute
 from app.maintenance_service import CleanupRequest, MaintenanceService
 from app.schemas import RevisionRequest
 
-router = APIRouter()
+router = APIRouter(route_class=AccessRoute)
 
 
 @router.get("/system/report")

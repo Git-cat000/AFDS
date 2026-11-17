@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Request
 
+from app.access import AccessRoute
 from app.provider_settings import DefaultUpdate, ProviderKind, ProviderStore, ProviderUpdate
 
-router = APIRouter(prefix="/settings")
+router = APIRouter(prefix="/settings", route_class=AccessRoute)
 
 
 @router.get("/models")

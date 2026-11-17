@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "./api";
+import { useSession } from "./session";
 import type { Project } from "./types";
 import type {
   ProductionStage,
@@ -26,7 +27,10 @@ export function SkillRunner({
   const [script, setScript] = useState(skill.scripts[0]?.path || "");
   const [argumentsText, setArgumentsText] = useState("[]");
   const [timeout, setTimeout] = useState(60);
-  const [mode, setMode] = useState<"local-user" | "container">("local-user");
+  const { session } = useSession();
+  const [mode, setMode] = useState<"local-user" | "container">(
+    session.mode === "team" ? "container" : "local-user",
+  );
   const [onlyShot, setOnlyShot] = useState(false);
   const [preview, setPreview] = useState<ScriptPlan>();
   const [consent, setConsent] = useState(false);
@@ -54,7 +58,9 @@ export function SkillRunner({
                 changed();
               }}
             >
-              <option value="local-user">本机用户</option>
+              {session.mode === "local" && (
+                <option value="local-user">本机用户</option>
+              )}
               <option value="container">隔离容器</option>
             </select>
           </label>

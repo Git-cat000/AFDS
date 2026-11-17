@@ -2,9 +2,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
 
+from app.access import AccessRoute
 from app.history_service import HistoryService, StateFilter
 
-router = APIRouter(prefix="/projects/{project_id}")
+router = APIRouter(prefix="/projects/{project_id}", route_class=AccessRoute)
 
 
 @router.get("/jobs/page")

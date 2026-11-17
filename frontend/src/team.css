@@ -1,0 +1,77 @@
+.session-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.session-card {
+  display: grid;
+  gap: 18px;
+  width: min(100%, 390px);
+  border: 1px solid var(--border, #45434d);
+  border-radius: 14px;
+  padding: 32px;
+  background: var(--surface, #242329);
+}
+.session-card h1,
+.session-card h2 {
+  margin: 0;
+}
+.session-card label,
+.member-invite label {
+  display: grid;
+  gap: 8px;
+}
+.session-card input {
+  width: 100%;
+}
+.session-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.session-team .topbar,
+.session-team .topbar-actions {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.project-role {
+  color: #c9bedf;
+  font-size: 13px;
+}
+.project-members {
+  display: grid;
+  gap: 24px;
+}
+.member-list {
+  display: grid;
+  gap: 12px;
+}
+.member-list article {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border, #45434d);
+  border-radius: 9px;
+  flex-wrap: wrap;
+}
+.member-list article > div {
+  flex: 1;
+  min-width: 130px;
+  display: grid;
+  gap: 4px;
+}
+.member-invite {
+  display: grid;
+  gap: 14px;
+}
+@media (max-width: 600px) {
+  .session-card {
+    padding: 24px;
+  }
+  .session-team .topbar-actions {
+    justify-content: flex-start;
+  }
+}

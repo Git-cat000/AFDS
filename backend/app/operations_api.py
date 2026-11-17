@@ -2,9 +2,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Request
 
+from app.access import AccessRoute
 from app.operations_service import OperationsService
 
-router = APIRouter()
+router = APIRouter(route_class=AccessRoute)
 
 
 @router.get("/system/status")

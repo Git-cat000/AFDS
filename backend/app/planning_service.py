@@ -3,7 +3,7 @@
 import copy
 from uuid import UUID
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import select, update
 
 from app import db
 from app.budget import BudgetService
@@ -246,8 +246,11 @@ class PlanningService:
                         copy.deepcopy(apr), plan["edits"]
                     )
                 )
-            connection.execute(
-                insert(db.plans).values(id=plan["id"], project_id=job["project_id"], payload=plan)
+            self.engine.store_plan(
+                connection,
+                job["project_id"],
+                plan,
+                source_actor=job.get("execution_actor_id") or job.get("actor_id"),
             )
             emit(connection, job["project_id"], "plan.proposed", {"plan_id": plan["id"]}, job["id"])
             self.queue.set_state(connection, current, "verifying", progress=90)

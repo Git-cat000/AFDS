@@ -7,13 +7,15 @@ from fastapi import APIRouter, Query, Request
 from sqlalchemy import select
 
 from app import db, restore_schema
+from app.access import AccessRoute
 from app.errors import DomainError
 from app.execution.queue import Queue, public_job, serialize
+from app.identity_context import actor_id
 from app.project_engine import ProjectEngine
 from app.schemas import APR, ProjectCreate
 from app.storage import contained, ensure_space
 
-router = APIRouter()
+router = APIRouter(route_class=AccessRoute)
 RESTORE_NAMESPACE = UUID("8317baad-705f-49f4-aa96-cdb9a4a0c243")
 
 
@@ -36,7 +38,10 @@ async def restore_project(
         raise DomainError("UPLOAD_TOO_LARGE", "Project archive upload limit is 2 GB", 413)
     database = request.app.state.database
     ensure_space(database.settings.data_dir, declared)
-    pid = str(uuid5(RESTORE_NAMESPACE, str(request_id)))
+    identity = str(request_id)
+    if database.settings.mode == "team":
+        identity = f"{actor_id(database.settings)}:{identity}"
+    pid = str(uuid5(RESTORE_NAMESPACE, identity))
     relative = f"uploads/{pid}/{uuid4()}.zip"
     destination = contained(database.settings.data_dir, relative)
     destination.parent.mkdir(parents=True, exist_ok=True)

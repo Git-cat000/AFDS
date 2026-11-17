@@ -209,6 +209,76 @@ workspaces = Table(
 )
 
 
+users = Table(
+    "users",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("username", String(64), nullable=False, unique=True),
+    Column("display_name", String(100), nullable=False),
+    Column("password_hash", String),
+    Column("is_admin", Boolean, nullable=False),
+    Column("active", Boolean, nullable=False),
+    Column("created_at", Float, nullable=False),
+)
+sessions = Table(
+    "sessions",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("token_hash", String(64), nullable=False, unique=True),
+    Column("user_id", ForeignKey("users.id"), nullable=False, index=True),
+    Column("csrf_hash", String(64), nullable=False),
+    Column("created_at", Float, nullable=False),
+    Column("expires_at", Float, nullable=False, index=True),
+)
+project_members = Table(
+    "project_members",
+    metadata,
+    Column("project_id", ForeignKey("projects.id"), primary_key=True),
+    Column("user_id", ForeignKey("users.id"), primary_key=True),
+    Column("role", String(16), nullable=False),
+    Column("created_at", Float, nullable=False),
+)
+project_skills = Table(
+    "project_skill_packages",
+    metadata,
+    Column("project_id", ForeignKey("projects.id"), primary_key=True),
+    Column("package_id", ForeignKey("skill_packages.id"), primary_key=True),
+)
+login_limits = Table(
+    "login_limits",
+    metadata,
+    Column("key", String(64), primary_key=True),
+    Column("window_at", Float, nullable=False),
+    Column("attempts", Integer, nullable=False),
+)
+workspace_operations = Table(
+    "workspace_operations",
+    metadata,
+    Column("project_id", ForeignKey("projects.id"), primary_key=True),
+    Column("id", String, primary_key=True),
+    Column("actor_id", ForeignKey("users.id"), nullable=False),
+    Column("created_at", Float, nullable=False),
+    Column("payload", JSON, nullable=False),
+)
+workspace_entities = Table(
+    "workspace_entities",
+    metadata,
+    Column("project_id", ForeignKey("projects.id"), primary_key=True),
+    Column("entity_id", String(200), primary_key=True),
+    Column("version", Integer, nullable=False),
+    Column("payload", JSON, nullable=False),
+)
+presence = Table(
+    "presence",
+    metadata,
+    Column("project_id", ForeignKey("projects.id"), primary_key=True),
+    Column("user_id", ForeignKey("users.id"), primary_key=True),
+    Column("session_id", String, primary_key=True),
+    Column("expires_at", Float, nullable=False),
+    Column("payload", JSON, nullable=False),
+)
+
+
 def lock_project(connection, project_id, *, force=False):
     if connection.dialect.name == "postgresql" and (
         force or connection.info.get("afds_write_transaction")
@@ -216,6 +286,14 @@ def lock_project(connection, project_id, *, force=False):
         connection.execute(
             select(projects.c.id).where(projects.c.id == str(project_id)).with_for_update()
         ).first()
+    if connection.info.get("afds_write_transaction"):
+        from app.identity_context import current_access, current_principal
+
+        actor, access = current_principal.get(), current_access.get()
+        if actor and actor.mode == "team" and access and access[0] == str(project_id):
+            from app.access import require_membership
+
+            require_membership(connection, project_id, actor, access[1])
 
 
 def lock_named_resource(connection, name):

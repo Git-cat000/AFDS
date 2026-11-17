@@ -232,14 +232,30 @@ class SkillLibrary:
     def __init__(self, database):
         self.database = database
 
-    def list(self, stage=None, offset=0, limit=50):
+    def list(self, stage=None, offset=0, limit=50, *, project_id=None, builtin_only=False):
         defaults = [
             public_package(value, False)
             for value in builtins().values()
             if stage is None or stage in value["stages"]
         ]
         defaults.sort(key=lambda value: (value["name"], value["id"]))
+        if builtin_only:
+            return {
+                "stages": STAGES,
+                "items": defaults[offset : offset + limit],
+                "total": len(defaults),
+                "offset": offset,
+            }
         conditions = []
+        if project_id is not None and self.database.settings.mode == "team":
+            conditions.append(
+                select(db.project_skills.c.package_id)
+                .where(
+                    db.project_skills.c.project_id == str(project_id),
+                    db.project_skills.c.package_id == db.skill_packages.c.id,
+                )
+                .exists()
+            )
         if stage:
             expand = (
                 func.json_array_elements_text
@@ -284,6 +300,32 @@ class SkillLibrary:
                 "SKILL_NOT_FOUND", "Reimport the selected immutable skill package", 404
             )
         return value
+
+    def project_package(self, project_id, identifier):
+        if self.database.settings.mode == "team" and identifier not in builtins():
+            with self.database.engine.connect() as connection:
+                owned = connection.execute(
+                    select(db.project_skills.c.package_id).where(
+                        db.project_skills.c.project_id == str(project_id),
+                        db.project_skills.c.package_id == identifier,
+                    )
+                ).first()
+            if owned is None:
+                raise DomainError("SKILL_NOT_FOUND", "Skill package not found in this project", 404)
+        return self.get(identifier)
+
+    def attach(self, project_id, identifier):
+        with self.database.transaction() as connection:
+            db.lock_project(connection, project_id)
+            condition = (db.project_skills.c.project_id == str(project_id)) & (
+                db.project_skills.c.package_id == identifier
+            )
+            if not connection.execute(select(db.project_skills).where(condition)).first():
+                connection.execute(
+                    insert(db.project_skills).values(
+                        project_id=str(project_id), package_id=identifier
+                    )
+                )
 
     def import_files(self, files, stages, source=""):
         package = package_data(decode_files(files), stages, source)
@@ -365,8 +407,8 @@ class SkillLibrary:
             raise DomainError("NOT_FOUND", "Skill resource not found", 404)
         return base64.b64decode(package["files"][name])
 
-    def snapshot(self, selection):
-        package = self.get(selection.package_id)
+    def snapshot(self, selection, project_id=None):
+        package = self.project_package(project_id, selection.package_id)
         resources = []
         for name in selection.resources:
             if name.startswith("scripts/") or name == "SKILL.md":

@@ -1,21 +1,15 @@
-import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from uuid import uuid4
 
 import pytest
 from conftest import project
-from sqlalchemy import create_engine
-from sqlalchemy.engine import make_url
 from test_skill_execution import execute_script, script_preview
 from test_skills import package_files
 
 from app import db, skill_sandbox
 from app.budget import BudgetService
-from app.config import Settings
-from app.db import Database
 from app.errors import DomainError
 from app.execution.queue import Queue
 from app.history_service import HistoryService
@@ -27,41 +21,6 @@ from app.skill_execution import SkillExecution
 from app.skill_packages import SkillLibrary
 from app.skill_schema import ProductionCheckRequest, SkillFile
 from app.workspace_service import read_workspace
-
-
-@pytest.fixture(
-    params=["sqlite", pytest.param("postgresql", marks=pytest.mark.integration_postgres)]
-)
-def dialect_database(request, tmp_path):
-    if request.param == "sqlite":
-        database = Database(
-            Settings(data_dir=tmp_path, database_url=f"sqlite:///{tmp_path / 'test.db'}")
-        )
-        database.migrate()
-        yield database
-        database.engine.dispose()
-        return
-    address = os.environ.get("AFDS_TEST_POSTGRES_URL")
-    if not address:
-        pytest.skip("Set AFDS_TEST_POSTGRES_URL to an isolated PostgreSQL test database")
-    namespace = "afds_test_" + uuid4().hex
-    admin = create_engine(address, isolation_level="AUTOCOMMIT")
-    with admin.connect() as connection:
-        connection.exec_driver_sql(f'CREATE SCHEMA "{namespace}"')
-    database = None
-    try:
-        address = make_url(address).update_query_dict({"options": f"-csearch_path={namespace}"})
-        database = Database(
-            Settings(data_dir=tmp_path, database_url=address.render_as_string(hide_password=False))
-        )
-        database.migrate()
-        yield database
-    finally:
-        if database is not None:
-            database.engine.dispose()
-        with admin.connect() as connection:
-            connection.exec_driver_sql(f'DROP SCHEMA "{namespace}" CASCADE')
-        admin.dispose()
 
 
 def make_project(database):

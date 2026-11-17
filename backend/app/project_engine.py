@@ -7,6 +7,7 @@ from sqlalchemy import delete, insert, select, update
 
 from app import db
 from app.errors import DomainError
+from app.identity_context import actor_id
 from app.schemas import APR, ChangeSet, ProjectCreate, Shot, new_id
 
 SHOT_FIELDS = {
@@ -140,6 +141,8 @@ class ProjectEngine:
             )
 
     def save(self, connection, apr, before, reason, author="user"):
+        if author == "user":
+            author = actor_id(self.database.settings) or author
         apr = validate(apr)
         from app.budget import BudgetService
 
@@ -154,6 +157,13 @@ class ProjectEngine:
         )
         if before is None:
             connection.execute(insert(db.projects).values(id=pid, **values))
+            owner_id = actor_id(self.database.settings)
+            if owner_id:
+                connection.execute(
+                    insert(db.project_members).values(
+                        project_id=pid, user_id=owner_id, role="owner", created_at=time.time()
+                    )
+                )
         else:
             result = connection.execute(
                 update(db.projects)
@@ -254,6 +264,8 @@ class ProjectEngine:
             )
 
     def save_workspace(self, connection, apr, base_workspace_revision, operation, author="local"):
+        if author in {"local", "user"}:
+            author = actor_id(self.database.settings) or author
         from app.workspace_schema import workspace_document
         from app.workspace_service import read_workspace
 
@@ -422,6 +434,13 @@ class ProjectEngine:
             after["revision"] += 1
             return self.save(connection, after, before, body.reason)
 
+    def store_plan(self, connection, project_id, plan, *, source_actor=None):
+        plan["actor_id"] = source_actor or actor_id(self.database.settings)
+        connection.execute(
+            insert(db.plans).values(id=plan["id"], project_id=str(project_id), payload=plan)
+        )
+        return plan
+
     def approve(self, connection, project_id, scope, details):
         connection.execute(
             insert(db.approvals).values(
@@ -429,7 +448,7 @@ class ProjectEngine:
                 project_id=str(project_id),
                 payload={
                     "scope": scope,
-                    "actor": "local-user",
+                    "actor": actor_id(self.database.settings) or "worker",
                     "decision": "approved",
                     "timestamp": time.time(),
                     "details": details,

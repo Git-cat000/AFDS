@@ -15,6 +15,9 @@ from app.errors import DomainError
 def create_app(settings: Settings | None = None):
     config = settings or Settings()
     application = FastAPI(title="AFDS", version=APP_VERSION)
+    from app.access import AccessRoute
+
+    application.router.route_class = AccessRoute
     application.state.settings = config
     from app.db import Database
 
@@ -35,6 +38,20 @@ def create_app(settings: Settings | None = None):
             allowed.add(str(request.base_url).rstrip("/"))
         if request.method not in {"GET", "HEAD", "OPTIONS"} and origin and origin not in allowed:
             return error_response(request, "ORIGIN_FORBIDDEN", "Untrusted browser origin", 403)
+        if config.mode == "team" and request.url.path in {
+            "/docs",
+            "/openapi.json",
+            "/redoc",
+            "/docs/oauth2-redirect",
+        }:
+            from app.identity_service import IdentityService
+
+            try:
+                principal = IdentityService(application.state.database).principal(request)
+                if not principal.is_admin:
+                    raise DomainError("ADMIN_REQUIRED", "Administrator access is required", 403)
+            except DomainError as error:
+                return error_response(request, error.code, error.message, error.status)
         response = await call_next(request)
         response.headers["X-Request-ID"] = request.state.request_id
         logging.getLogger("afds.api").info(
@@ -86,6 +103,9 @@ def create_app(settings: Settings | None = None):
     def version():
         return {"version": APP_VERSION, "apr_schema_version": APR_SCHEMA_VERSION}
 
+    from app.identity_api import router as identity_router
+
+    application.include_router(identity_router, prefix="/api/v1")
     from app.workspace_api import router as workspace_router
 
     application.include_router(workspace_router, prefix="/api/v1")

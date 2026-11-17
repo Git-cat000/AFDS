@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import ValidationError
 
+from app.access import AccessRoute
 from app.errors import DomainError
 from app.project_engine import ProjectEngine
 from app.schemas import ChangeSet
@@ -22,7 +23,7 @@ from app.skill_schema import (
     Stage,
 )
 
-router = APIRouter()
+router = APIRouter(route_class=AccessRoute)
 
 
 async def bounded_body(request, limit):
@@ -41,7 +42,9 @@ def library(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
 ):
-    return SkillLibrary(request.app.state.database).list(stage, offset, limit)
+    return SkillLibrary(request.app.state.database).list(
+        stage, offset, limit, builtin_only=request.app.state.settings.mode == "team"
+    )
 
 
 @router.post("/skills/import", status_code=201)
@@ -79,6 +82,38 @@ def detail(package_id: str, request: Request):
     return public_package(SkillLibrary(request.app.state.database).get(package_id))
 
 
+@router.get("/projects/{project_id}/skills")
+def project_library(
+    project_id: UUID,
+    request: Request,
+    stage: Stage | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+):
+    return SkillLibrary(request.app.state.database).list(
+        stage, offset, limit, project_id=project_id
+    )
+
+
+@router.post("/projects/{project_id}/skills/import", status_code=201)
+async def project_import_files(project_id: UUID, request: Request):
+    result = await import_files(request)
+    SkillLibrary(request.app.state.database).attach(project_id, result["id"])
+    return result
+
+
+@router.post("/projects/{project_id}/skills/import-zip", status_code=201)
+async def project_import_zip(
+    project_id: UUID,
+    request: Request,
+    stages: str = Query(max_length=200),
+    source: str = Query("", max_length=1000),
+):
+    result = await import_zip(request, stages, source)
+    SkillLibrary(request.app.state.database).attach(project_id, result["id"])
+    return result
+
+
 @router.get("/skills/{package_id}/resource")
 def resource(package_id: str, request: Request, path: str = Query(max_length=240)):
     content = SkillLibrary(request.app.state.database).resource(package_id, path)
@@ -106,7 +141,7 @@ def configure(project_id, body, request, commit):
             if prior and [item["path"] for item in prior["resources"]] == selection.resources:
                 guides.append(copy.deepcopy(prior))
             else:
-                guides.append(library.snapshot(selection))
+                guides.append(library.snapshot(selection, project_id))
         selected[stage] = guides
     change = ChangeSet(
         base_revision=body.base_revision,
@@ -184,3 +219,18 @@ def output(project_id: UUID, job_id: UUID, artifact_id: str, request: Request):
         filename=artifact["name"].split("/")[-1],
         headers={"X-Content-Type-Options": "nosniff"},
     )
+
+
+@router.get("/projects/{project_id}/skills/{package_id}")
+def project_detail(project_id: UUID, package_id: str, request: Request):
+    return public_package(
+        SkillLibrary(request.app.state.database).project_package(project_id, package_id)
+    )
+
+
+@router.get("/projects/{project_id}/skills/{package_id}/resource")
+def project_resource(
+    project_id: UUID, package_id: str, request: Request, path: str = Query(max_length=240)
+):
+    SkillLibrary(request.app.state.database).project_package(project_id, package_id)
+    return resource(package_id, request, path)

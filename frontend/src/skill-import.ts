@@ -1,4 +1,4 @@
-import { api } from "./api";
+import { api, sessionFetch } from "./api";
 import type { ProductionStage, SkillPackage } from "./skill-types";
 
 function readFile(file: File): Promise<ArrayBuffer> {
@@ -14,13 +14,15 @@ export async function importSkillFiles(
   files: File[],
   stages: ProductionStage[],
   source: string,
+  projectId?: string,
 ) {
+  const root = projectId ? `/projects/${projectId}/skills` : "/skills";
   if (!files.length || !stages.length)
     throw new Error("选择技能文件及至少一个适用阶段");
   if (files.length === 1 && files[0].name.toLowerCase().endsWith(".zip")) {
     if (files[0].size > 16 * 1024 ** 2) throw new Error("ZIP 最大16MiB");
     const query = new URLSearchParams({ stages: stages.join(","), source });
-    const response = await fetch(`/api/v1/skills/import-zip?${query}`, {
+    const response = await sessionFetch(`/api/v1${root}/import-zip?${query}`, {
       method: "POST",
       headers: { "Content-Type": "application/zip" },
       body: files[0],
@@ -47,7 +49,7 @@ export async function importSkillFiles(
       content_base64: btoa(value),
     });
   }
-  return api<SkillPackage>("/skills/import", {
+  return api<SkillPackage>(`${root}/import`, {
     files: resources,
     stages,
     source,

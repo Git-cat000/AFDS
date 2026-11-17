@@ -48,6 +48,9 @@ import { TimelineEditor } from "./TimelineEditor";
 import { BackupRestorePanel } from "./BackupRestorePanel";
 import { OperationsDashboard } from "./OperationsDashboard";
 import { SkillStagePanel } from "./SkillStagePanel";
+import { ProjectMembers } from "./ProjectMembers";
+import { SessionStatus } from "./SessionProvider";
+import { useProjectAccess, useSession } from "./session";
 import type { ProductionStage } from "./skill-types";
 import type {
   ChangeSet,
@@ -105,6 +108,9 @@ function Modal({
 
 export function App() {
   const { projectId, setProject } = useStudio();
+  const { session } = useSession();
+  const access = useProjectAccess(projectId);
+  const canAdmin = session.mode === "local" || !!session.user?.is_admin;
   const queryClient = useQueryClient();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -125,6 +131,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
   const [skillsStage, setSkillsStage] = useState<ProductionStage>("story");
   const [message, setMessage] = useState("用四个镜头，讲述这个故事。");
   const [llmChoice, setLlmChoice] = useState<string | null>(null);
@@ -161,6 +168,7 @@ export function App() {
   });
   const modelSettings = useQuery({
     queryKey: ["model-settings"],
+    enabled: canAdmin,
     queryFn: () => api<ModelSettings>("/settings/models"),
   });
   const llmProvider =
@@ -206,6 +214,7 @@ export function App() {
     setEditing(null);
     setHistoryOpen(false);
     setSkillsOpen(false);
+    setMembersOpen(false);
     setTab("storyboard");
     setSelectedShotId("");
     setStoryboardDrafts({});
@@ -287,7 +296,7 @@ export function App() {
   const visibleError =
     error || project.error?.message || projects.error?.message || "";
   return (
-    <div className="app-shell">
+    <div className={`app-shell session-${session.mode}`}>
       <aside className="rail">
         <button
           className="brand"
@@ -351,20 +360,24 @@ export function App() {
             </button>
           </>
         )}
-        <button
-          className={`nav ${tab === "operations" ? "active" : ""}`}
-          onClick={() => setTab("operations")}
-        >
-          <RefreshCw size={18} />
-          运行概览
-        </button>
-        <button
-          className={`nav ${tab === "providers" ? "active" : ""}`}
-          onClick={() => setTab("providers")}
-        >
-          <Settings2 size={18} />
-          模型与工具
-        </button>
+        {canAdmin && (
+          <button
+            className={`nav ${tab === "operations" ? "active" : ""}`}
+            onClick={() => setTab("operations")}
+          >
+            <RefreshCw size={18} />
+            运行概览
+          </button>
+        )}
+        {canAdmin && (
+          <button
+            className={`nav ${tab === "providers" ? "active" : ""}`}
+            onClick={() => setTab("providers")}
+          >
+            <Settings2 size={18} />
+            模型与工具
+          </button>
+        )}
         <button
           className={`nav ${skillsOpen ? "active" : ""}`}
           onClick={() => setSkillsOpen(true)}
@@ -383,6 +396,22 @@ export function App() {
             工作空间 <span>/</span> {apr?.title || "项目总览"}
           </div>
           <div className="topbar-actions">
+            {session.mode === "team" && projectId && (
+              <>
+                <span className="project-role">
+                  {(
+                    {
+                      owner: "所有者",
+                      editor: "编辑者",
+                      reviewer: "审片者",
+                      viewer: "查看者",
+                    } as Record<string, string>
+                  )[access?.role || ""] || "正在检查权限"}
+                </span>
+                <button onClick={() => setMembersOpen(true)}>项目成员</button>
+              </>
+            )}
+            <SessionStatus />
             <span className="offline">
               {usesRemote ? "已选择外部模型" : "离线 Mock 工作室"}
             </span>
@@ -985,6 +1014,14 @@ export function App() {
               run={run}
             />
           </Suspense>
+        </Modal>
+      )}
+      {membersOpen && projectId && (
+        <Modal title="项目成员" close={() => setMembersOpen(false)}>
+          <ProjectMembers
+            projectId={projectId}
+            canManage={!!access?.actions.includes("manage_members")}
+          />
         </Modal>
       )}
       {editing && apr && (

@@ -33,6 +33,8 @@ function JobDetail({ job, projectId }: { job: Job; projectId: string }) {
             <pre>{JSON.stringify(detail.data.skill_result, null, 2)}</pre>
           )}
           <small>输入哈希 {job.input_summary?.request_hash}</small>
+          {detail.data?.actor_id && <small>发起者 {detail.data.actor_id}</small>}
+          {detail.data?.execution_actor_id && <small>本次执行审批者 {detail.data.execution_actor_id}</small>}
         </>
       )}
     </details>

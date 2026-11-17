@@ -66,12 +66,12 @@ SQLAlchemy 的 PostgreSQL 行锁和 `SKIP LOCKED` 支持作为领取与写入实
 - 登录会话采用随机不透明令牌，数据库保存其摘要，密码使用 Argon2id。生产部署使用 HttpOnly、Secure、SameSite Cookie 与写请求 CSRF 校验。
 - `python -m app.admin create-user` 通过交互式输入建立首位管理员。旧项目通过 `claim-local-projects --owner <username>` 明确分配归属。
 
-- [ ] 添加 `test_role_action_matrix` 和 `test_route_inventory_requires_access_policy`。遍历 HTTP 路由，除健康、版本、登录及必要静态入口外，每条路由有权限分类。跨项目读取、导出、任务恢复、源码预览及下载均验证拒绝。
-- [ ] 添加 `test_last_owner_cannot_be_removed_concurrently`、会话轮换/注销、CSRF、登录限速和旧项目归属测试，执行后记录失败。
-- [ ] 实现 0009 迁移、账号服务、会话与授权依赖。将操作者 ID 传入 Engine、计划、预算审批和任务溯源。按角色授权成员变更，并记录审计事件。
-- [ ] 接通登录、注销、成员管理和权限反馈 UI。本机模式映射明确的本机主体，团队部署要求有效会话，团队设置随私有部署配置提供。
-- [ ] 验证权限撤销对后续请求、事件连接和排队任务的影响，Worker 在启动前复核任务的当前执行权限。已提交远端任务沿用当前取消与计费状态说明。
-- [ ] 执行角色矩阵及多浏览器流程，核对导出包的项目内容、操作者展示与私有账号信息边界，更新 `docs/TEAM.md` 后精确提交。
+- [x] 添加 `test_role_action_matrix` 和 `test_route_inventory_requires_access_policy`。遍历 HTTP 路由，除健康、版本、登录及必要静态入口外，每条路由有权限分类。跨项目读取、导出、任务恢复、源码预览及下载均验证拒绝。
+- [x] 添加 `test_last_owner_cannot_be_removed_concurrently`、会话轮换/注销、CSRF、登录限速和旧项目归属测试，执行后记录失败。
+- [x] 实现 0009 迁移、账号服务、会话与授权依赖。将操作者 ID 传入 Engine、计划、预算审批和任务溯源。按角色授权成员变更，并记录审计事件。
+- [x] 接通登录、注销、成员管理和权限反馈 UI。本机模式映射明确的本机主体，团队部署要求有效会话，团队设置随私有部署配置提供。
+- [x] 验证权限撤销对后续请求、事件连接和排队任务的影响，Worker 在启动前复核任务的当前执行权限。已提交远端任务沿用当前取消与计费状态说明。
+- [x] 执行角色矩阵及多浏览器流程，核对导出包的项目内容、操作者展示与私有账号信息边界，更新 `docs/TEAM.md` 后精确提交。
 
 密码哈希使用受维护库的校验和参数升级入口，并按部署资源限制登录并发。[argon2-cffi 用法](https://argon2-cffi.readthedocs.io/en/stable/howto.html)
 

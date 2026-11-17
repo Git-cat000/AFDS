@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "./api";
+import { api, sessionFetch } from "./api";
+import { useSession } from "./session";
 import { importSkillFiles } from "./skill-import";
 import { SkillRunner } from "./SkillRunner";
 import { SkillRuns } from "./SkillRuns";
@@ -42,6 +43,10 @@ export function ProductionSkills({
   run: SkillAction;
 }) {
   const queries = useQueryClient();
+  const { session } = useSession();
+  const libraryRoot = project
+    ? `/projects/${project.project_id}/skills`
+    : "/skills";
   const [stage, setStage] = useState<ProductionStage>(initialStage);
   const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState("");
@@ -66,17 +71,17 @@ export function ProductionSkills({
     preview: Preview;
   }>();
   const library = useQuery({
-    queryKey: ["skill-library", stage, offset],
+    queryKey: ["skill-library", project?.project_id, stage, offset],
     queryFn: () =>
       api<{ items: SkillPackage[]; total: number }>(
-        `/skills?stage=${stage}&offset=${offset}&limit=20`,
+        `${libraryRoot}?stage=${stage}&offset=${offset}&limit=20`,
       ),
   });
   const identifier = selectedId || library.data?.items[0]?.id;
   const detail = useQuery({
-    queryKey: ["skill-detail", identifier],
+    queryKey: ["skill-detail", project?.project_id, identifier],
     enabled: !!identifier,
-    queryFn: () => api<SkillPackage>(`/skills/${identifier}`),
+    queryFn: () => api<SkillPackage>(`${libraryRoot}/${identifier}`),
   });
   const selections = draft?.selections || projectSelections(project);
   const chosen = selections[stage] || [];
@@ -111,7 +116,14 @@ export function ProductionSkills({
     );
   }
   async function imported(files: File[]) {
-    const value = await importSkillFiles(files, importStages, source);
+    if (session.mode === "team" && !project)
+      throw new Error("请先选择项目再导入技能");
+    const value = await importSkillFiles(
+      files,
+      importStages,
+      source,
+      project?.project_id,
+    );
     setStage(importStages[0]);
     setOffset(0);
     setSelectedId(value.id);
@@ -341,8 +353,8 @@ export function ProductionSkills({
                               <button
                                 onClick={() =>
                                   void perform(async () => {
-                                    const response = await fetch(
-                                      `/api/v1/skills/${skill.id}/resource?${new URLSearchParams({ path: file.path })}`,
+                                    const response = await sessionFetch(
+                                      `/api/v1${libraryRoot}/${skill.id}/resource?${new URLSearchParams({ path: file.path })}`,
                                     );
                                     if (!response.ok)
                                       throw new Error("无法读取技能资源");

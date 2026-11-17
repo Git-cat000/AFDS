@@ -7,13 +7,14 @@ from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.access import AccessRoute
 from app.errors import DomainError
 from app.exchange import _hash_file, _relative_file, export_request
 from app.execution.queue import Queue
 from app.project_engine import ProjectEngine
 from app.schemas import RevisionRequest
 
-router = APIRouter()
+router = APIRouter(route_class=AccessRoute)
 
 
 class ExportRequest(RevisionRequest):
@@ -40,11 +41,15 @@ def create_export(project_id: UUID, body: ExportRequest, request: Request):
     with database.transaction(snapshot=True) as connection:
         apr = engine.load(connection, project_id)
         engine.check_revision(apr, body.base_revision)
+        snapshot = export_request(apr, body.format, read_workspace(connection, project_id))
+    with database.transaction() as connection:
+        current = engine.load(connection, project_id)
+        engine.check_revision(current, body.base_revision)
         job = Queue(database).enqueue(
             connection,
-            apr,
+            current,
             "export_project",
-            export_request(apr, body.format, read_workspace(connection, project_id)),
+            snapshot,
         )
         return public_job(job)
 

@@ -2,9 +2,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Request
 
+from app.access import AccessRoute
 from app.budget import BudgetService, BudgetUpdate, Reconcile
 
-router = APIRouter(prefix="/projects/{project_id}/budget")
+router = APIRouter(prefix="/projects/{project_id}/budget", route_class=AccessRoute)
 
 
 @router.get("")

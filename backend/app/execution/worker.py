@@ -54,6 +54,9 @@ class Worker:
                 if current["state"] == "cancel_requested":
                     self.queue.set_state(connection, current, "cancelled")
                     return True
+                from app.access import check_job_access
+
+                check_job_access(connection, current, self.settings)
                 self.queue.set_state(connection, current, "running", progress=10)
             work = contained(self.settings.data_dir, f"cache/{job['id']}/{new_id()}")
             work.mkdir(parents=True, exist_ok=True)
@@ -279,6 +282,7 @@ class Worker:
             before = self.engine.load(connection, job["project_id"])
             apr = copy.deepcopy(before)
             provenance = {
+                "actor_id": job.get("execution_actor_id") or job.get("actor_id"),
                 "job_id": job["id"],
                 "provider_id": job["provider_id"],
                 "model_id": job["model_id"],

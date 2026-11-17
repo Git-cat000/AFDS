@@ -2,9 +2,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Request
 
+from app.access import AccessRoute
 from app.planning_service import PlanningService, SemanticPlanningRequest, StoryPlanningRequest
 
-router = APIRouter(prefix="/projects/{project_id}/planning")
+router = APIRouter(prefix="/projects/{project_id}/planning", route_class=AccessRoute)
 
 
 @router.post("/storyboard", status_code=202)

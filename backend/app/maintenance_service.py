@@ -9,7 +9,7 @@ import time
 from uuid import UUID
 
 from pydantic import Field
-from sqlalchemy import insert, select, update
+from sqlalchemy import select, update
 
 from app import APP_VERSION, APR_SCHEMA_VERSION, db
 from app.errors import DomainError
@@ -166,9 +166,7 @@ class MaintenanceService:
         with self.database.transaction() as connection:
             self.engine.check_revision(owned_header(connection, project_id), body.base_revision)
             self.no_active_jobs(connection, project_id)
-            connection.execute(
-                insert(db.plans).values(id=plan["id"], project_id=str(project_id), payload=plan)
-            )
+            self.engine.store_plan(connection, project_id, plan)
         return plan
 
     def enqueue(self, project_id, body):

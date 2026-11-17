@@ -7,7 +7,7 @@ import os
 import stat
 import time
 
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import func, select, update
 
 from app import db, skill_sandbox
 from app.errors import DomainError
@@ -142,13 +142,17 @@ class SkillExecution:
         self.library = SkillLibrary(database)
 
     def preview(self, project_id, body):
+        if self.database.settings.mode == "team" and body.execution_mode != "container":
+            raise DomainError(
+                "SANDBOX_REQUIRED", "Team scripts require the isolated container policy", 422
+            )
         if any(SECRET.search(value.encode()) for value in body.arguments):
             raise DomainError(
                 "SCRIPT_ARGUMENT_CREDENTIAL",
                 "Use credential references instead of secret values in saved arguments",
                 422,
             )
-        package = self.library.get(body.package_id)
+        package = self.library.project_package(project_id, body.package_id)
         script = next(
             (value for value in package["scripts"] if value["path"] == body.script_path), None
         )
@@ -204,9 +208,7 @@ class SkillExecution:
                 "runtime": runtime,
                 "resources": package["resources"],
             }
-            connection.execute(
-                insert(db.plans).values(id=plan["id"], project_id=str(project_id), payload=plan)
-            )
+            self.engine.store_plan(connection, project_id, plan)
             return plan
 
     def approve(self, project_id, plan_id, body):
@@ -262,7 +264,7 @@ class SkillExecution:
                     409,
                 )
             self.engine.check_revision(apr, body.base_revision)
-            self.library.get(request["package_id"])
+            self.library.project_package(project_id, request["package_id"])
             source = self.library.resource(request["package_id"], request["script_path"])
             if hashlib.sha256(source).hexdigest() != request["script_sha256"]:
                 raise DomainError("HASH_MISMATCH", "Approved script source changed", 409)
@@ -353,6 +355,10 @@ class SkillExecution:
         if file_hash(source) != request["script_sha256"]:
             raise DomainError("HASH_MISMATCH", "Approved script source changed", 409)
         mode = request.get("execution_mode", "local-user")
+        if self.database.settings.mode == "team" and mode != "container":
+            raise DomainError(
+                "SANDBOX_REQUIRED", "Team scripts require a newly approved container run", 422
+            )
         if mode == "container":
             policy = skill_sandbox.ScriptExecutionPolicy.model_validate(request["execution_policy"])
             if skill_sandbox.policy_digest(policy) != request["execution_policy_sha256"]:
