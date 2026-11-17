@@ -10,6 +10,8 @@ import {
   type CanvasBoard,
 } from "./canvas-board";
 import type { Project } from "./types";
+import { useSession } from "./session";
+import { useCollaborativeBoard } from "./useCollaborativeBoard";
 
 type SharedBoard = Omit<CanvasBoard, "x" | "y" | "zoom">;
 type WorkspaceSnapshot = {
@@ -58,6 +60,14 @@ function localBoard(project: Project) {
 }
 
 export function useCanvasBoard(project: Project) {
+  const { session } = useSession();
+  const team = session.mode === "team";
+  const localBoard = useLocalCanvasBoard(project, !team);
+  const teamBoard = useCollaborativeBoard(project, team);
+  return team ? teamBoard : { ...localBoard, online: [] };
+}
+
+function useLocalCanvasBoard(project: Project, enabled: boolean) {
   const projectId = project.project_id;
   const projectRef = useRef(project);
   useEffect(() => {
@@ -106,6 +116,7 @@ export function useCanvasBoard(project: Project) {
   );
 
   useEffect(() => {
+    if (!enabled) return;
     const local = localBoard(projectRef.current);
     const state: Connection = {
       active: true,
@@ -271,9 +282,10 @@ export function useCanvasBoard(project: Project) {
       state.active = false;
       clearTimeout(state.timer);
     };
-  }, [projectId, publish]);
+  }, [projectId, publish, enabled]);
   const previousFilm = useRef({ projectId, revision: project.revision });
   useEffect(() => {
+    if (!enabled) return;
     const previous = previousFilm.current;
     previousFilm.current = { projectId, revision: project.revision };
     if (
@@ -282,7 +294,7 @@ export function useCanvasBoard(project: Project) {
     ) {
       void reload.current("refresh");
     }
-  }, [projectId, project.revision]);
+  }, [projectId, project.revision, enabled]);
   function change(
     update: (board: CanvasBoard) => CanvasBoard,
     remember = true,

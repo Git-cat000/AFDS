@@ -51,3 +51,23 @@ python -m app.admin claim-local-projects --owner <username>
 ## 验收范围
 
 开发验收使用隔离 PostgreSQL 17、独立 Worker、真实 Chromium 上下文和本机 Docker。影片采用明确标记的 DEMO/MOCK 媒体。真实供应商质量及账单验收需要部署方配置服务。
+
+## 共享画布与实时协作
+
+团队工作台通过服务端保存物料、便签、位置、连线和隐藏状态。视角和缩放保存在当前浏览器。不同对象的修改自动合并。同一对象发生同时修改时，界面保留本机草稿并提供“载入服务器版本”和“重新保存当前草稿”。后一个操作使用最新实体版本提交当前草稿。
+
+拖动期间显示成员及正在编辑的对象，松开后提交位置。在线状态每 2 秒更新，15 秒失效。SSE 每 500 毫秒读取持久事件，支持游标补拉和断线重连。成员撤销、会话失效或注销后，事件连接关闭。
+
+撤销与重做按当前页面本人已提交的操作执行。后续修改或新增引用影响相同对象时，服务端拒绝覆盖。每批最多 64 个操作，在同一事务中提交。更大的草稿按依赖顺序分批提交。网络响应不确定时，请求身份及草稿保留到本机缓存，重试或重新打开页面会沿用原操作身份。
+
+画布版本独立于影片 revision。剧本、镜头、时间轴和模型审批继续经过 Project Engine 的影片修订校验。
+
+### 双实例开发验收
+
+安装 Playwright Chromium 后，在前端目录运行以下命令。测试使用演示账号、独立 PostgreSQL schema 与两个本机 API 进程，端口分别为 8011/8012，两个前端入口为 5174/5175。
+
+```sh
+AFDS_TEST_TEAM_BROWSER=1 AFDS_TEST_COLLAB_BROWSER=1 AFDS_TEST_POSTGRES_URL=<test-database-url> AFDS_SANDBOX_IMAGE_ID=<built-image-id> npx playwright test --config playwright.team.config.ts
+```
+
+PowerShell 使用 `$env:VARIABLE='value'` 设置这些环境变量。测试数据库必须由验收环境提供，数据目录位于忽略的 `data/browser-tests/`。部署时的跨主机节点、共享挂载和 TLS 配置见后续部署指南。

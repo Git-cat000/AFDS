@@ -498,9 +498,11 @@ function CanvasSurface({
               }}
               onNodesChange={nodeChanges}
               onEdgesChange={edgeChanges}
-              onNodeDragStart={state.startGesture}
+              onNodeDragStart={(_, node) => state.startGesture(node.id)}
               onNodeDragStop={state.finishGesture}
-              onSelectionDragStart={state.startGesture}
+              onSelectionDragStart={(_, selected) =>
+                state.startGesture(selected[0]?.id)
+              }
               onSelectionDragStop={state.finishGesture}
               onNodeClick={(_, node) => {
                 if (node.data.item.kind === "shot")
@@ -659,12 +661,28 @@ function CanvasSurface({
       {state.syncError && (
         <div className="canvas-notice" role="status">
           <p>{state.syncError}</p>
-          <button onClick={() => void state.loadServer()}>载入服务器版本</button>
-          <button onClick={() => void state.retrySync()}>重新保存当前草稿</button>
+          <button onClick={() => void state.loadServer()}>
+            载入服务器版本
+          </button>
+          <button onClick={() => void state.retrySync()}>
+            重新保存当前草稿
+          </button>
         </div>
       )}
       <div className="canvas-toolbar">
         <small aria-live="polite">{state.syncStatus}</small>
+        {state.online.length > 0 && (
+          <small aria-label="在线成员">
+            {state.online
+              .map((person) => {
+                const editing = items.find(
+                  (item) => item.id === person.entity_id,
+                );
+                return `${person.display_name}${editing ? ` 正在编辑 ${itemLabel(editing)}` : ""}`;
+              })
+              .join("、")}
+          </small>
+        )}
         <small>拖动标题移动 · Shift 框选 · 从端口连线</small>
         <button aria-label="缩小画布" onClick={() => zoom(-0.1)}>
           <Minus size={15} />

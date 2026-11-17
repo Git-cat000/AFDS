@@ -36,6 +36,12 @@
   flex-wrap: wrap;
   gap: 12px;
 }
+.session-team .topbar {
+  height: auto;
+  min-height: 64px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
 .project-role {
   color: #c9bedf;
   font-size: 13px;

@@ -264,7 +264,7 @@ workspace_entities = Table(
     "workspace_entities",
     metadata,
     Column("project_id", ForeignKey("projects.id"), primary_key=True),
-    Column("entity_id", String(200), primary_key=True),
+    Column("entity_id", String(205), primary_key=True),
     Column("version", Integer, nullable=False),
     Column("payload", JSON, nullable=False),
 )

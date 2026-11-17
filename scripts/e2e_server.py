@@ -13,6 +13,8 @@ data.mkdir(parents=True)
 os.environ["AFDS_DATA_DIR"] = str(data)
 os.environ["AFDS_DATABASE_URL"] = "sqlite:///" + (data / "afds.db").as_posix()
 os.environ["AFDS_CORS_ORIGINS"] = "http://127.0.0.1:5174,http://localhost:5174"
+if os.environ.get("AFDS_TEST_COLLAB_BROWSER") == "1":
+    os.environ["AFDS_CORS_ORIGINS"] += ",http://127.0.0.1:5175"
 sys.path.insert(0, str(ROOT / "backend"))
 
 from app.config import Settings
@@ -49,6 +51,9 @@ if os.environ.get("AFDS_TEST_TEAM_BROWSER") == "1":
         )
 database.engine.dispose()
 flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+api_ports = (
+    ["8011", "8012"] if os.environ.get("AFDS_TEST_COLLAB_BROWSER") == "1" else ["8011"]
+)
 processes = [
     subprocess.Popen(
         [
@@ -59,17 +64,20 @@ processes = [
             "--host",
             "127.0.0.1",
             "--port",
-            "8011",
+            port,
         ],
         cwd=ROOT / "backend",
         creationflags=flags,
-    ),
+    )
+    for port in api_ports
+]
+processes.append(
     subprocess.Popen(
         [sys.executable, "-m", "app.execution.worker"],
         cwd=ROOT / "backend",
         creationflags=flags,
-    ),
-]
+    )
+)
 try:
     while all(p.poll() is None for p in processes):
         time.sleep(0.5)

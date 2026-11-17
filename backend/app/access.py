@@ -113,7 +113,9 @@ def policy_for(path, methods):
         return {"audience": "library", "action": "edit" if writing else "read"}
     if path.startswith("/projects/{project_id}"):
         action = "edit" if writing else "read"
-        if writing and "/jobs/{job_id}/" in path:
+        if writing and path.endswith("/presence"):
+            action = "read"
+        elif writing and "/jobs/{job_id}/" in path:
             action = "job_control"
         elif writing and path.endswith("/exports"):
             action = "read"

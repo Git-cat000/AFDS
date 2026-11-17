@@ -51,6 +51,7 @@ import { SkillStagePanel } from "./SkillStagePanel";
 import { ProjectMembers } from "./ProjectMembers";
 import { SessionStatus } from "./SessionProvider";
 import { useProjectAccess, useSession } from "./session";
+import { useProjectEvents } from "./useProjectEvents";
 import type { ProductionStage } from "./skill-types";
 import type {
   ChangeSet,
@@ -108,6 +109,7 @@ function Modal({
 
 export function App() {
   const { projectId, setProject } = useStudio();
+  useProjectEvents(projectId);
   const { session } = useSession();
   const access = useProjectAccess(projectId);
   const canAdmin = session.mode === "local" || !!session.user?.is_admin;

@@ -2,8 +2,8 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect
 
-from app.config import ROOT, Settings
 from app import db
+from app.config import ROOT, Settings
 from app.db import Database
 from app.project_engine import ProjectEngine
 from app.schemas import APR

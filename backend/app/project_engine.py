@@ -299,6 +299,9 @@ class ProjectEngine:
                 )
         else:
             connection.execute(insert(db.workspaces).values(project_id=str(project_id), **values))
+        from app.collaboration_service import synchronize_entities
+
+        synchronize_entities(connection, project_id, current["document"], document)
         emit(connection, str(project_id), "workspace.updated", {"workspace_revision": revision})
         return read_workspace(connection, project_id)
 

@@ -22,6 +22,9 @@ def create_app(settings: Settings | None = None):
     from app.db import Database
 
     application.state.database = Database(config)
+    from app.collaboration_api import router as collaboration_router
+
+    application.include_router(collaboration_router, prefix="/api/v1")
     application.add_middleware(
         CORSMiddleware,
         allow_origins=config.cors_origins.split(","),
