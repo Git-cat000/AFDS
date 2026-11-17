@@ -1,0 +1,8 @@
+**
+!backend/
+!backend/app/
+!backend/app/sandbox_protocol.py
+!deploy/
+!deploy/sandbox/
+!deploy/sandbox/Dockerfile
+!deploy/sandbox/entrypoint.py

@@ -19,7 +19,7 @@ app = ["builtin_skills/*/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["media: runs real FFmpeg and ffprobe", "integration_external: opt-in live provider calls that may incur charges"]
+markers = ["media: runs real FFmpeg and ffprobe", "integration_external: opt-in live provider calls that may incur charges", "integration_docker: actual isolated Docker sandbox acceptance"]
 
 [tool.ruff]
 line-length = 100

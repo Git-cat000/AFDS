@@ -76,12 +76,12 @@
 - `run_container(settings, package, script, arguments, context, policy, checkpoint) -> SandboxResult` 位于 `skill_sandbox.py`。
 - `SandboxResult` 包含退出状态、截断标记、标准输出/错误、结果文件摘要和实际策略摘要。
 
-- [ ] 在 `test_skill_sandbox.py` 添加真实容器测试 `test_container_cannot_read_host_or_connect`、`test_container_limits_output_and_children` 和 `test_container_result_archive_rejects_links`。运行四类解释器示例，验证脚本无法读取主机探针文件、无法访问测试 HTTP 服务、无法修改只读包、超时后子进程与容器停止。填满 tmpfs 时返回有界错误，输出归档拒绝链接成员及路径穿越。
-- [ ] 建立 `integration_docker` 标记，先执行测试并保存失败原因。Docker 预检区分客户端、引擎、镜像、Linux 容器模式和资源控制器。
-- [ ] 实现固定镜像与 `run_container()`。运行前解析不可变镜像 ID，采用参数数组调用容器控制入口。只有服务端策略允许的镜像和挂载进入命令。镜像构建时安装解释器依赖，运行上下文明确包含其版本。
-- [ ] 实现受信任启动程序。脚本在容器内执行，程序在容器存活期间将有界输出档案交回 Worker。Worker 对归档成员、类型、路径、数量、大小、哈希再次校验，结果保存复用现有归属检查。每流 64 KiB 展示、1 MiB 截止及 32 个文件/单文件 8 MiB/总计 32 MiB 沿用现有协议。
-- [ ] 增加策略拒绝和故障测试。资源限制未生效、镜像身份变化或 Docker 失联时返回类型化错误。取消、租约过期及 Worker 崩溃后的容器按运行标签和启动记录清理，结果未知状态要求新方案。
-- [ ] 执行实际 Docker 测试并检查残留容器、宿主探针及测试服务访问日志，精确提交实现和验证说明。
+- [x] 在 `test_skill_sandbox.py` 添加真实容器测试 `test_container_cannot_read_host_or_connect`、`test_container_limits_output_and_children` 和 `test_container_result_archive_rejects_links`。运行四类解释器示例，验证脚本无法读取主机探针文件、无法访问测试 HTTP 服务、无法修改只读包、超时后子进程与容器停止。填满 tmpfs 时返回有界错误，输出归档拒绝链接成员及路径穿越。
+- [x] 建立 `integration_docker` 标记，先执行测试并保存失败原因。Docker 预检区分客户端、引擎、镜像、Linux 容器模式和资源控制器。
+- [x] 实现固定镜像与 `run_container()`。运行前解析不可变镜像 ID，采用参数数组调用容器控制入口。只有服务端策略允许的镜像和挂载进入命令。镜像构建时安装解释器依赖，运行上下文明确包含其版本。
+- [x] 实现受信任启动程序。脚本在容器内执行，程序在容器存活期间将有界输出档案交回 Worker。Worker 对归档成员、类型、路径、数量、大小、哈希再次校验，结果保存复用现有归属检查。每流 64 KiB 展示、1 MiB 截止及 32 个文件/单文件 8 MiB/总计 32 MiB 沿用现有协议。
+- [x] 增加策略拒绝和故障测试。资源限制未生效、镜像身份变化或 Docker 失联时返回类型化错误。取消、租约过期及 Worker 崩溃后的容器按运行标签和启动记录清理，结果未知状态要求新方案。
+- [x] 执行实际 Docker 测试并检查残留容器、宿主探针及测试服务访问日志，精确提交实现和验证说明。
 
 Docker 的只读文件系统、网络与资源选项作为实现依据。Rootless 部署还需检查 cgroup 控制器是否实际生效。[运行配置](https://docs.docker.com/reference/cli/docker/container/run/) · [独立网络](https://docs.docker.com/engine/network/drivers/none/) · [tmpfs](https://docs.docker.com/engine/storage/tmpfs/) · [Rootless 资源条件](https://docs.docker.com/engine/security/rootless/tips/)
 

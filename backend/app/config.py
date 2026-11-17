@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     lease_seconds: int = 30
     media_timeout: int = 180
     max_job_attempts: int = 2
+    sandbox_image_id: str = ""
 
     def model_post_init(self, context):
         self.data_dir = (ROOT / self.data_dir).resolve()
