@@ -102,6 +102,8 @@ class OperationsService:
         self.database = database
 
     def status(self):
+        from app.worker_registry import WorkerRegistry
+
         now = time.time()
         database = {"status": "unavailable", "schema_version": None}
         worker = {
@@ -127,6 +129,18 @@ class OperationsService:
                     status="online" if online_count else "offline",
                     online_count=online_count,
                     last_seen_age_seconds=max(0, now - latest) if latest is not None else None,
+                )
+        except SQLAlchemyError:
+            pass
+        nodes = []
+        try:
+            nodes = WorkerRegistry(self.database).list()
+            if nodes:
+                online = [node for node in nodes if node["status"] in {"online", "draining"}]
+                worker.update(
+                    status="online" if online else "offline",
+                    online_count=len(online),
+                    last_seen_age_seconds=max(0, now - max(node["last_seen_at"] for node in nodes)),
                 )
         except SQLAlchemyError:
             pass
@@ -161,7 +175,8 @@ class OperationsService:
         )
         return {
             "status": "ok" if ok else "degraded",
-            "deployment": "local_single_user",
+            "deployment": "team" if self.database.settings.mode == "team" else "local_single_user",
+            "nodes": nodes,
             "database": database,
             "worker": worker,
             "tools": tools,

@@ -54,30 +54,30 @@ class MockDirector:
 def propose(engine, project_id, body):
     from app.budget import BudgetService
     from app.llm_adapter import propose_story
-    from app.provider_settings import ProviderStore
+    from app.routing_service import RoutingService
 
-    store = ProviderStore(engine.database)
-    provider_id = body.provider_id or store.list()["defaults"]["llm"]
-    if provider_id not in {"mock-director", "openai-llm"}:
-        raise DomainError("MODEL_UNAVAILABLE", "Unknown director provider", 422)
+    routing = RoutingService(engine.database)
     config = None
     charge_id = None
-    if provider_id == "openai-llm":
-        if not body.allow_remote:
-            raise DomainError(
-                "REMOTE_CONSENT_REQUIRED",
-                "Approve sharing this brief and unknown provider costs",
-                409,
-            )
-        snapshot = store.snapshot(provider_id, "storyboard")
-        config = store.runtime("llm", snapshot["revision"])
+    submitted_input = body.model_dump(mode="json")
     with engine.database.transaction() as connection:
         apr = engine.load(connection, project_id)
+        identity, reference, prior = routing.direct_request(connection, apr, "director", body)
+        if prior:
+            return prior
         engine.check_revision(apr, body.base_revision)
+        selected = routing.choose(
+            connection,
+            apr,
+            "storyboard",
+            provider_id=body.provider_id,
+            allow_remote=body.allow_remote,
+            preview_id=body.route_preview_id,
+        )
+        if not selected.get("is_mock"):
+            config = routing.runtime(selected, project_id)
         if config:
-            charge_id = BudgetService(engine.database).reserve(
-                connection, apr, f"llm:{new_id()}", config
-            )
+            charge_id = routing.reserve(connection, apr, reference, selected)
             BudgetService(engine.database).begin_submission(
                 connection, charge_id, config["timeout_seconds"]
             )
@@ -86,7 +86,7 @@ def propose(engine, project_id, body):
                 project_id,
                 "remote_llm",
                 {
-                    "provider_id": provider_id,
+                    "provider_id": selected["provider_id"],
                     "revision": config["revision"],
                     "cost_status": "unknown",
                 },
@@ -107,6 +107,7 @@ def propose(engine, project_id, body):
                 BudgetService(engine.database).finalize(connection, charge_id, submitted)
     with engine.database.transaction() as connection:
         engine.check_revision(engine.load(connection, project_id), body.base_revision)
+        plan.update(request_id=identity, input=submitted_input, model_route=selected["route"])
         engine.store_plan(connection, project_id, plan)
         return plan
 

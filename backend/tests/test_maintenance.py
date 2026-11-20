@@ -55,7 +55,7 @@ def test_diagnostics_download_has_only_sanitized_runtime_fields(client):
     apr = ProjectEngine(client.app.state.database).create(ProjectCreate(title="PRIVATE title"))
     response = client.get("/api/v1/system/report", params={"project_id": apr["project_id"]})
     assert response.status_code == 200
-    assert response.json()["version"] == "0.7.0"
+    assert response.json()["version"] == "0.8.0"
     assert response.json()["project"]["project_id"] == apr["project_id"]
     assert (
         "PRIVATE" not in response.text

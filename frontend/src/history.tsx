@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ProjectEvent } from "./api";
+import { queueRoutedRequest } from "./model-routing";
 import type { Job } from "./types";
 
 export type Page<T> = {
@@ -99,21 +100,15 @@ export async function queuePlanning(
   kind: "storyboard" | "semantic",
   body: Record<string, unknown>,
 ) {
-  const key = `afds-planning-${projectId}-${kind}`;
-  const signature = JSON.stringify(body);
-  let pending: { signature: string; id: string } | undefined;
-  try {
-    pending = JSON.parse(sessionStorage.getItem(key) || "null");
-  } catch {
-    /* Ignore obsolete browser state. */
-  }
-  const id =
-    pending?.signature === signature ? pending.id : crypto.randomUUID();
-  sessionStorage.setItem(key, JSON.stringify({ signature, id }));
-  const job = await api<Job>(`/projects/${projectId}/planning/${kind}`, {
-    ...body,
-    request_id: id,
+  return queueRoutedRequest<Job>({
+    project: { project_id: projectId, revision: Number(body.base_revision) },
+    path: `/projects/${projectId}/planning/${kind}`,
+    body,
+    capability: "storyboard",
+    storageKey: `afds-planning-${projectId}-${kind}`,
+    requirements: {
+      remoteOnly: kind === "semantic",
+      providerId: kind === "semantic" ? "openai-llm" : undefined,
+    },
   });
-  sessionStorage.removeItem(key);
-  return job;
 }

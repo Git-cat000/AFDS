@@ -4,9 +4,9 @@ import json
 import random
 import time
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import and_, func, insert, select, true, update
 
-from app import db
+from app import APP_VERSION, db
 from app.adapters import check_provider
 from app.errors import DomainError
 from app.identity_context import actor_id
@@ -41,6 +41,14 @@ def digest(value):
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
     ).hexdigest()
+
+
+def request_digest(request):
+    value = copy.deepcopy(request)
+    value.pop("route", None)
+    if value.get("provider_config"):
+        value["provider_config"].pop("route", None)
+    return digest(value)
 
 
 def shot_request(apr, shot, provider_config=None):
@@ -91,6 +99,8 @@ def serialize(row):
         "lease_owner": row["lease_owner"],
         "lease_expires_at": row["lease_expires_at"],
         "available_at": row["available_at"],
+        "worker_node_id": row["worker_node_id"],
+        "worker_generation": row["worker_generation"],
     }
 
 
@@ -105,9 +115,11 @@ def public_job(job):
 
 
 class Queue:
-    def __init__(self, database):
+    def __init__(self, database, node=None):
         self.database = database
         self.engine = ProjectEngine(database)
+        self.node = node
+        self.last_node_probe = 0
 
     def get(self, connection, project_id, job_id):
         db.lock_project(connection, project_id)
@@ -123,9 +135,20 @@ class Queue:
             raise DomainError("NOT_FOUND", "Job not found in this project", 404)
         return serialize(row)
 
-    def enqueue(self, connection, apr, operation, request, target=None, idempotency_key=None):
+    def enqueue(
+        self,
+        connection,
+        apr,
+        operation,
+        request,
+        target=None,
+        idempotency_key=None,
+        submitted_input=None,
+    ):
+        from app.worker_registry import required_capability
+
         db.lock_project(connection, apr["project_id"])
-        fingerprint = digest(request)
+        fingerprint = request_digest(request)
         key = idempotency_key or f"{apr['project_id']}:{operation}:{fingerprint}"
         existing = (
             connection.execute(select(db.jobs).where(db.jobs.c.idempotency_key == key))
@@ -165,6 +188,8 @@ class Queue:
             "external_task_id": None,
             "submission_started": False,
         }
+        if submitted_input is not None:
+            payload["submitted_input"] = copy.deepcopy(submitted_input)
         if payload["provider_id"].startswith("openai-"):
             unknown = {"status": "unknown", "amount": None, "currency": None}
             payload.update(
@@ -182,9 +207,9 @@ class Queue:
             payload.update(estimated_cost=unknown, actual_cost=unknown)
         jid = new_id()
         if request.get("provider_config"):
-            from app.budget import BudgetService
+            from app.routing_service import RoutingService
 
-            payload["budget_entry_id"] = BudgetService(self.database).reserve(
+            payload["budget_entry_id"] = RoutingService(self.database).reserve(
                 connection, apr, f"job:{jid}", request["provider_config"]
             )
         connection.execute(
@@ -195,6 +220,7 @@ class Queue:
                 state="queued",
                 attempt=0,
                 available_at=0,
+                required_capability=required_capability(payload),
                 payload=payload,
             )
         )
@@ -270,24 +296,62 @@ class Queue:
                 apr["render_status"] = "stale"
 
     def generate(self, project_id, body):
-        from app.provider_settings import ProviderStore
+        from app.routing_schema import RoutingRequirements
+        from app.routing_service import RoutingService
 
-        store = ProviderStore(self.database)
-        provider_id = body.provider_id or store.list()["defaults"]["video"]
-        config = None
-        if provider_id == "mock-video-local":
-            check_provider(self.database.settings, provider_id, body.capability)
-        elif provider_id == "openai-video":
-            if not body.allow_remote:
-                raise DomainError(
-                    "REMOTE_CONSENT_REQUIRED", "Approve sharing shot content and unknown costs", 409
-                )
-            config = store.snapshot(provider_id, body.capability)
-        else:
-            raise DomainError("MODEL_UNAVAILABLE", "Unknown video provider", 422)
         with self.database.transaction() as connection:
             apr = self.engine.load(connection, project_id)
+            submitted = body.model_dump(mode="json")
+            keys = (
+                {str(sid): f"{project_id}:video:{body.request_id}:{sid}" for sid in body.shot_ids}
+                if body.request_id
+                else {}
+            )
+            if keys:
+                prior = (
+                    connection.execute(
+                        select(db.jobs).where(db.jobs.c.idempotency_key.in_(keys.values()))
+                    )
+                    .mappings()
+                    .all()
+                )
+                if prior:
+                    if len(prior) != len(keys) or any(
+                        row["payload"].get("submitted_input") != submitted
+                        or row["payload"].get("actor_id") != actor_id(self.database.settings)
+                        for row in prior
+                    ):
+                        raise DomainError(
+                            "REQUEST_ID_CONFLICT",
+                            "Video request ID was used for different input",
+                            409,
+                        )
+                    indexed = {row["payload"]["target_entity_id"]: serialize(row) for row in prior}
+                    return [indexed[sid] for sid in keys]
             self.engine.check_revision(apr, body.base_revision)
+            references = {
+                role
+                for sid in body.shot_ids
+                for role in find(apr["shots"], sid).get("reference_images", {})
+            }
+            selected = RoutingService(self.database).choose(
+                connection,
+                apr,
+                body.capability,
+                provider_id=body.provider_id,
+                allow_remote=body.allow_remote,
+                preview_id=body.route_preview_id,
+                # Legacy fingerprint requests may reuse already reserved jobs.
+                # Their per-job reservation remains the atomic budget authority.
+                check_remaining_budget=bool(body.request_id or body.route_preview_id),
+                requirements=RoutingRequirements(
+                    units=len(set(body.shot_ids)), reference_roles=sorted(references)
+                ),
+            )
+            config = None if selected.get("is_mock") else selected
+            provider_id = selected["provider_id"]
+            if config is None:
+                check_provider(self.database.settings, selected["provider_id"], body.capability)
             before = copy.deepcopy(apr)
             result = []
             for sid in dict.fromkeys(body.shot_ids):
@@ -304,6 +368,8 @@ class Queue:
                         422,
                     )
                 request = shot_request(apr, shot, config)
+                if config is None:
+                    request["route"] = selected["route"]
                 seconds = Format(**apr["format"]).seconds(shot["duration_frames"])
                 if not 1 <= seconds <= 30:
                     raise DomainError(
@@ -314,7 +380,17 @@ class Queue:
                 if shot["locked"]:
                     raise DomainError("SHOT_LOCKED", "Unlock this shot before generation", 409)
                 # Approved shots may produce candidates, but worker never replaces their selection.
-                result.append(self.enqueue(connection, apr, "generate_video", request, shot["id"]))
+                result.append(
+                    self.enqueue(
+                        connection,
+                        apr,
+                        "generate_video",
+                        request,
+                        shot["id"],
+                        idempotency_key=keys.get(shot["id"]),
+                        submitted_input=submitted if body.request_id else None,
+                    )
+                )
             if config:
                 self.engine.approve(
                     connection,
@@ -333,19 +409,92 @@ class Queue:
             return result
 
     def generate_media(self, project_id, body):
-        from app.provider_settings import CAPABILITIES, ProviderStore
+        from app.provider_settings import CAPABILITIES
+        from app.routing_service import RoutingService
 
         kind = "image" if body.operation == "generate_image" else "speech"
         if not body.allow_remote:
             raise DomainError(
                 "REMOTE_CONSENT_REQUIRED", "Approve content sharing and unknown costs", 409
             )
-        store = ProviderStore(self.database)
-        provider_id = body.provider_id or store.list()["defaults"][kind]
-        config = store.snapshot(provider_id, CAPABILITIES[kind])
         with self.database.transaction() as connection:
             apr = self.engine.load(connection, project_id)
+            submitted = body.model_dump(mode="json")
+            key = f"{project_id}:media:{body.request_id}" if body.request_id else None
+            if key:
+                prior = (
+                    connection.execute(select(db.jobs).where(db.jobs.c.idempotency_key == key))
+                    .mappings()
+                    .first()
+                )
+                if prior is None:
+                    legacy = (
+                        connection.execute(
+                            select(db.jobs)
+                            .where(
+                                db.jobs.c.project_id == str(project_id),
+                                db.jobs.c.payload["operation"].as_string() == body.operation,
+                                db.jobs.c.payload["request"]["request_id"].as_string()
+                                == str(body.request_id),
+                            )
+                            .limit(2)
+                        )
+                        .mappings()
+                        .all()
+                    )
+                    if len(legacy) > 1:
+                        raise DomainError(
+                            "REQUEST_ID_AMBIGUOUS",
+                            "Multiple legacy tasks use this request ID. "
+                            "Review their existing charges.",
+                            409,
+                        )
+                    prior = legacy[0] if legacy else None
+                if prior:
+                    job = serialize(prior)
+                    from app.schemas import MediaGenerateRequest
+
+                    original = job["request"].get("input")
+                    if original:
+                        matches = (
+                            MediaGenerateRequest.model_validate(original).model_dump(mode="json")
+                            == submitted
+                        )
+                    else:
+                        request = job["request"]
+                        identifiers = {
+                            request["provider_id"],
+                            request.get("provider_config", {}).get("connection_id"),
+                            f"default-{kind}",
+                        }
+                        matches = (
+                            request["prompt"] == body.prompt
+                            and job["source_revision"] == body.base_revision
+                            and (body.provider_id is None or body.provider_id in identifiers)
+                            and body.allow_remote
+                            and body.route_preview_id is None
+                        )
+                    actor = actor_id(self.database.settings)
+                    compatible_actor = job.get("actor_id") == actor or (
+                        self.database.settings.mode == "local" and job.get("actor_id") is None
+                    )
+                    if not matches or not compatible_actor:
+                        raise DomainError(
+                            "REQUEST_ID_CONFLICT",
+                            "Media request ID was used for different input",
+                            409,
+                        )
+                    return job
             self.engine.check_revision(apr, body.base_revision)
+            config = RoutingService(self.database).choose(
+                connection,
+                apr,
+                CAPABILITIES[kind],
+                provider_id=body.provider_id,
+                allow_remote=body.allow_remote,
+                preview_id=body.route_preview_id,
+            )
+            provider_id = config["provider_id"]
             request = {
                 "prompt": body.prompt,
                 "format": apr["format"],
@@ -354,13 +503,14 @@ class Queue:
                 "model_id": config["model"],
                 "adapter_version": "0.2.0",
                 "request_id": str(body.request_id) if body.request_id else None,
+                **({"input": submitted} if body.request_id else {}),
             }
             add_guidance(request, apr, ["image"] if kind == "image" else ["audio"])
             if kind == "speech" and request.get("production_guidance"):
                 from app.remote_media import speech_instructions
 
                 speech_instructions(request, config["model"])
-            job = self.enqueue(connection, apr, body.operation, request)
+            job = self.enqueue(connection, apr, body.operation, request, idempotency_key=key)
             self.engine.approve(
                 connection,
                 project_id,
@@ -371,6 +521,7 @@ class Queue:
 
     def update_remote(self, job, owner, **fields):
         from app.media import Cancelled
+        from app.worker_registry import WorkerRegistry
 
         with self.database.transaction() as connection:
             current = self.get(connection, job["project_id"], job["id"])
@@ -380,6 +531,7 @@ class Queue:
                 or current["lease_expires_at"] is None
                 or current["lease_expires_at"] < time.time()
                 or current["state"] not in {"running", "cancel_requested"}
+                or not WorkerRegistry(self.database).check_job(connection, current)
             ):
                 raise Cancelled()
             payload = connection.execute(
@@ -449,6 +601,7 @@ class Queue:
 
     def check_owned(self, connection, job, owner):
         from app.media import Cancelled
+        from app.worker_registry import WorkerRegistry
 
         current = self.get(connection, job["project_id"], job["id"])
         if (
@@ -457,6 +610,7 @@ class Queue:
             or not current["lease_expires_at"]
             or current["lease_expires_at"] < time.time()
             or current["state"] not in {"running", "verifying"}
+            or not WorkerRegistry(self.database).check_job(connection, current)
         ):
             raise Cancelled()
         return current
@@ -482,8 +636,43 @@ class Queue:
         job.update(state=target, **payload_updates)
 
     def claim(self, owner):
+        from app.worker_registry import WorkerRegistry
+
+        registry = WorkerRegistry(self.database)
+        if self.node:
+            refreshed = registry.refresh(self.node, runtime=True)
+            if refreshed is None:
+                return None
+            self.node = refreshed
+        elif self.database.settings.mode == "team":
+            return None
         now = time.time()
         with self.database.transaction() as connection:
+            node = registry.lock(connection, self.node) if self.node else None
+            fit = []
+            if self.node:
+                if (
+                    node is None
+                    or node["draining"]
+                    or node["storage"]["status"] != "available"
+                    or node["app_version"] != APP_VERSION
+                ):
+                    return None
+                used = connection.execute(
+                    select(func.count())
+                    .select_from(db.jobs)
+                    .where(
+                        db.jobs.c.worker_node_id == node["id"],
+                        db.jobs.c.state.in_(ACTIVE),
+                        db.jobs.c.lease_expires_at >= now,
+                    )
+                ).scalar_one()
+                if used >= node["slots"]:
+                    return None
+                fit = [
+                    db.jobs.c.payload["operation"].as_string().in_(node["operations"]),
+                    db.jobs.c.required_capability.in_(node["capabilities"]),
+                ]
             postgres = connection.dialect.name == "postgresql"
             scope = []
             if postgres:
@@ -494,6 +683,7 @@ class Queue:
                         (
                             db.jobs.c.state.in_({"queued", "retry_wait"})
                             & (db.jobs.c.available_at <= now)
+                            & and_(true(), *fit)
                         )
                         | (db.jobs.c.state.in_(ACTIVE) & (db.jobs.c.lease_expires_at < now)),
                     )
@@ -573,6 +763,7 @@ class Queue:
                 select(db.jobs)
                 .where(
                     *scope,
+                    *fit,
                     db.jobs.c.state == "queued",
                     db.jobs.c.available_at <= now,
                 )
@@ -587,7 +778,13 @@ class Queue:
             if row is None:
                 return None
             job = serialize(row)
-            self.set_state(connection, job, "claimed")
+            self.set_state(
+                connection,
+                job,
+                "claimed",
+                worker_node_id=node["id"] if node else None,
+                worker_generation=node["generation"] if node else None,
+            )
             connection.execute(
                 update(db.jobs)
                 .where(db.jobs.c.id == job["id"])
@@ -595,12 +792,32 @@ class Queue:
                     lease_owner=owner,
                     lease_expires_at=now + self.database.settings.lease_seconds,
                     attempt=job["attempt"] + 1,
+                    worker_node_id=node["id"] if node else None,
+                    worker_generation=node["generation"] if node else None,
                 )
             )
             return self.get(connection, job["project_id"], job["id"])
 
     def heartbeat(self, job_id, owner):
+        from app.worker_registry import WorkerRegistry
+
+        registry = WorkerRegistry(self.database)
+        if self.node and time.time() - self.last_node_probe >= 5:
+            refreshed = registry.refresh(self.node)
+            if refreshed is None or refreshed["storage"]["status"] != "available":
+                return False
+            self.node = refreshed
+            self.last_node_probe = time.time()
+        with self.database.engine.connect() as connection:
+            project_id = connection.execute(
+                select(db.jobs.c.project_id).where(db.jobs.c.id == job_id)
+            ).scalar_one_or_none()
+        if project_id is None:
+            return False
         with self.database.transaction() as connection:
+            current = self.get(connection, project_id, job_id)
+            if not registry.check_job(connection, current):
+                return False
             result = connection.execute(
                 update(db.jobs)
                 .where(
@@ -715,6 +932,8 @@ class Queue:
             return self.get(connection, project_id, job_id)
 
     def fail(self, job, owner, code, message, transient=False, details=None):
+        from app.worker_registry import WorkerRegistry
+
         with self.database.transaction() as connection:
             current = self.get(connection, job["project_id"], job["id"])
             if (
@@ -723,6 +942,7 @@ class Queue:
                 or current["lease_expires_at"] is None
                 or current["lease_expires_at"] < time.time()
                 or current["state"] not in ACTIVE
+                or not WorkerRegistry(self.database).check_job(connection, current)
             ):
                 return
             if current["state"] == "cancel_requested":

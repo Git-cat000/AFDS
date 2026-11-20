@@ -2,14 +2,16 @@ import argparse
 import copy
 import errno
 import logging
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from app import db
 from app.adapters import video_adapter
 from app.config import Settings
 from app.errors import DomainError
-from app.execution.queue import Queue, digest, render_request, shot_request
+from app.execution.queue import Queue, render_request, request_digest, shot_request
 from app.media import Cancelled, render
 from app.project_engine import ProjectEngine, emit, find
 from app.schemas import new_id
@@ -19,12 +21,29 @@ logger = logging.getLogger("afds.worker")
 
 
 class Worker:
-    def __init__(self, database):
+    def __init__(self, database, *, node=None, node_id=None, label=None, operations=None, slots=1):
+        from app.worker_registry import WorkerRegistry
+
         self.database = database
         self.settings = database.settings
-        self.queue = Queue(database)
         self.engine = ProjectEngine(database)
         self.owner = new_id()
+        self.registry = WorkerRegistry(database)
+        if node is None:
+            from app.operations_service import OPERATIONS
+
+            if self.settings.mode == "local":
+                self.registry.initialize_store()
+            node = self.registry.register(
+                {
+                    "id": node_id or self.owner,
+                    "label": label or "AFDS worker",
+                    "operations": sorted(operations or OPERATIONS),
+                    "slots": slots,
+                }
+            )
+        self.node = node
+        self.queue = Queue(database, node=node)
         self.last_pulse = 0
 
     def run_once(self):
@@ -49,6 +68,7 @@ class Worker:
                     or current["lease_expires_at"] is None
                     or current["lease_expires_at"] < time.time()
                     or current["attempt"] != job["attempt"]
+                    or not self.registry.check_job(connection, current)
                 ):
                     return True
                 if current["state"] == "cancel_requested":
@@ -58,12 +78,17 @@ class Worker:
 
                 check_job_access(connection, current, self.settings)
                 self.queue.set_state(connection, current, "running", progress=10)
-            work = contained(self.settings.data_dir, f"cache/{job['id']}/{new_id()}")
+            work = contained(self.settings.cache_root, f"{job['id']}/{new_id()}")
             work.mkdir(parents=True, exist_ok=True)
             output = work / "output.mp4"
 
             def checkpoint():
                 return self.queue.heartbeat(job["id"], self.owner)
+
+            if job["request"].get("provider_config", {}).get("route"):
+                from app.routing_service import RoutingService
+
+                RoutingService(self.database).prepare_job(self.queue, job, self.owner)
 
             if job["operation"] in {"analyze_beats", "transcribe_audio"}:
                 from app.analysis_service import AnalysisService
@@ -273,6 +298,7 @@ class Worker:
                 or current["attempt"] != job["attempt"]
                 or current["lease_expires_at"] is None
                 or current["lease_expires_at"] < time.time()
+                or not self.registry.check_job(connection, current)
             ):
                 return
             if current["state"] == "cancel_requested":
@@ -297,6 +323,11 @@ class Worker:
             }
             if "normalization" in result:
                 provenance["normalization"] = result["normalization"]
+            model_route = job["request"].get("provider_config", {}).get("route") or job[
+                "request"
+            ].get("route")
+            if model_route:
+                provenance["model_route"] = model_route
             if job["request"].get("production_guidance"):
                 provenance["production_guidance"] = [
                     {key: value[key] for key in ("package_id", "name", "version", "stage")}
@@ -385,7 +416,7 @@ class Worker:
                 output_ids.append(poster["id"])
                 shot = find(apr["shots"], job["target_entity_id"])
                 fresh = (
-                    digest(shot_request(apr, shot, job["request"].get("provider_config")))
+                    request_digest(shot_request(apr, shot, job["request"].get("provider_config")))
                     == job["fingerprint"]
                 )
                 version = {
@@ -417,7 +448,7 @@ class Worker:
                 fresh = True
             else:
                 try:
-                    fresh = digest(render_request(apr)) == job["fingerprint"]
+                    fresh = request_digest(render_request(apr)) == job["fingerprint"]
                 except DomainError:
                     fresh = False
                 if fresh:
@@ -448,7 +479,10 @@ class Worker:
 
     def publish_export(self, job, result, elapsed_ms):
         source = Path(result["path"]).resolve()
-        if not source.is_relative_to(self.settings.data_dir.resolve()):
+        if not (
+            source.is_relative_to(self.settings.data_dir.resolve())
+            or source.is_relative_to(self.settings.cache_root.resolve())
+        ):
             raise DomainError("INVALID_PATH", "Export artifact is outside storage", 403)
         sha = file_hash(source)
         suffix = ".zip" if result["media_type"] == "application/zip" else ".otio"
@@ -474,6 +508,7 @@ class Worker:
                 or current["attempt"] != job["attempt"]
                 or current["lease_expires_at"] is None
                 or current["lease_expires_at"] < time.time()
+                or not self.registry.check_job(connection, current)
             ):
                 return
             if current["state"] == "cancel_requested":
@@ -504,23 +539,46 @@ class Worker:
 
 
 def main():
+    from app.operations_service import OPERATIONS
+
     parser = argparse.ArgumentParser(description="AFDS independent media worker")
     parser.add_argument("--once", action="store_true")
+    parser.add_argument("--node-id")
+    parser.add_argument("--label")
+    parser.add_argument("--operations", nargs="+", choices=sorted(OPERATIONS))
+    parser.add_argument("--slots", type=int, choices=range(1, 33), default=1)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     database = db.Database(Settings())
     database.migrate()
-    worker = Worker(database)
-    try:
-        while True:
-            worked = worker.run_once()
+    worker = Worker(
+        database,
+        node_id=args.node_id,
+        label=args.label,
+        operations=args.operations,
+        slots=args.slots,
+    )
+    workers = [worker, *[Worker(database, node=worker.node) for _ in range(args.slots - 1)]]
+    stop = threading.Event()
+
+    def run(slot):
+        while not stop.is_set():
+            worked = slot.run_once()
             if args.once:
-                break
+                return
             if not worked:
-                time.sleep(0.5)
+                stop.wait(0.5)
+
+    executor = ThreadPoolExecutor(max_workers=args.slots)
+    try:
+        futures = [executor.submit(run, slot) for slot in workers]
+        for future in futures:
+            future.result()
     except KeyboardInterrupt:
         logger.info("Worker stopped. Expired leases will recover on restart.")
     finally:
+        stop.set()
+        executor.shutdown(wait=True, cancel_futures=True)
         database.engine.dispose()
 
 

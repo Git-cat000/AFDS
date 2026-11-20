@@ -42,6 +42,9 @@ if os.environ.get("AFDS_TEST_TEAM_BROWSER") == "1":
 
 database = Database(Settings())
 database.migrate()
+from app.worker_registry import WorkerRegistry
+
+WorkerRegistry(database).initialize_store()
 if os.environ.get("AFDS_TEST_TEAM_BROWSER") == "1":
     from app.identity_service import IdentityService
 
@@ -51,6 +54,13 @@ if os.environ.get("AFDS_TEST_TEAM_BROWSER") == "1":
         )
 database.engine.dispose()
 flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+from app.operations_service import OPERATIONS
+
+deployment_worker_args = (
+    ["--operations", *sorted(OPERATIONS - {"run_skill_script"})]
+    if os.environ.get("AFDS_TEST_DEPLOYMENT_BROWSER") == "1"
+    else []
+)
 api_ports = (
     ["8011", "8012"] if os.environ.get("AFDS_TEST_COLLAB_BROWSER") == "1" else ["8011"]
 )
@@ -73,11 +83,26 @@ processes = [
 ]
 processes.append(
     subprocess.Popen(
-        [sys.executable, "-m", "app.execution.worker"],
+        [sys.executable, "-m", "app.execution.worker"]
+        + (
+            ["--node-id", "demo-media-1"]
+            if os.environ.get("AFDS_TEST_DEPLOYMENT_BROWSER") == "1"
+            else []
+        )
+        + deployment_worker_args,
         cwd=ROOT / "backend",
         creationflags=flags,
     )
 )
+if os.environ.get("AFDS_TEST_DEPLOYMENT_BROWSER") == "1":
+    processes.append(
+        subprocess.Popen(
+            [sys.executable, "-m", "app.execution.worker", "--node-id", "demo-media-2"]
+            + deployment_worker_args,
+            cwd=ROOT / "backend",
+            creationflags=flags,
+        )
+    )
 try:
     while all(p.poll() is None for p in processes):
         time.sleep(0.5)

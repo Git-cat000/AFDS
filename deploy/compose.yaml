@@ -1,0 +1,139 @@
+name: afds
+
+x-runtime: &runtime
+  image: ${AFDS_RUNTIME_IMAGE:?Set the verified runtime image identity}
+  pull_policy: never
+  environment: &environment
+    AFDS_MODE: team
+    AFDS_PRODUCTION: "true"
+    AFDS_PUBLIC_ORIGIN: ${AFDS_PUBLIC_ORIGIN:?Set the HTTPS public origin}
+    AFDS_TRUSTED_PROXY: ${AFDS_PROXY_IP:-172.31.250.10}
+    AFDS_DATABASE_URL_FILE: /run/secrets/database_url
+    AFDS_DATA_DIR: /data
+    AFDS_WORKER_CACHE_DIR: /tmp/afds-worker
+  secrets: [database_url]
+  volumes:
+    - type: bind
+      source: ${AFDS_SHARED_STORE:?Set the shared asset store directory}
+      target: /data
+  read_only: true
+  tmpfs: [/tmp:rw,nosuid,nodev,size=1073741824]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 512
+  networks: [internal]
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: "3"}
+
+services:
+  database:
+    image: registry-1.docker.io/library/postgres@sha256:a77aa70e641402a21411b92b721c58d10f23b50ae5fdd2333efd22d166e1e5f7
+    environment:
+      POSTGRES_USER: afds
+      POSTGRES_DB: afds
+      POSTGRES_PASSWORD_FILE: /run/secrets/database_password
+    secrets: [database_password]
+    volumes: [postgres:/var/lib/postgresql/data]
+    networks: [internal]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U afds -d afds"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    shm_size: 256m
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+  migrate:
+    <<: *runtime
+    command: [python, -m, app.deployment, migrate]
+    depends_on:
+      database: {condition: service_healthy}
+    restart: "no"
+
+  api:
+    <<: *runtime
+    command: [python, -m, app.deployment, serve]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python, -m, app.deployment, health]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 2
+
+  worker:
+    <<: *runtime
+    command: [python, -m, app.execution.worker, --node-id, media-1, --label, Media-1, --slots, "1", --operations, generate_video, generate_image, generate_speech, render_timeline, render_preview, import_video, import_image, import_audio, analyze_beats, transcribe_audio, plan_storyboard, plan_semantic, review_shot, export_project, restore_project, check_production, cleanup_storage]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python, -m, app.deployment, worker-health, --node-id, media-1]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    stop_grace_period: 90s
+    mem_limit: 2g
+    cpus: 2
+
+  worker-2:
+    <<: *runtime
+    profiles: [second-worker]
+    command: [python, -m, app.execution.worker, --node-id, media-2, --label, Media-2, --slots, "1", --operations, generate_video, render_timeline, render_preview, import_video, import_image, import_audio, analyze_beats, transcribe_audio, plan_storyboard, plan_semantic, review_shot, export_project, restore_project, check_production, cleanup_storage, generate_image, generate_speech]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python, -m, app.deployment, worker-health, --node-id, media-2]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    stop_grace_period: 90s
+    mem_limit: 2g
+    cpus: 2
+
+  web:
+    image: ${AFDS_WEB_IMAGE:?Set the verified web image identity}
+    pull_policy: never
+    ports: ["${AFDS_BIND_ADDRESS:-127.0.0.1}:${AFDS_HTTPS_PORT:-443}:8443"]
+    secrets: [tls_certificate, tls_private_key]
+    depends_on:
+      api: {condition: service_healthy}
+    networks:
+      internal:
+        ipv4_address: ${AFDS_PROXY_IP:-172.31.250.10}
+      public: {}
+    read_only: true
+    tmpfs: [/tmp:rw,nosuid,nodev,size=134217728]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 256m
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+volumes:
+  postgres: {}
+networks:
+  internal:
+    ipam:
+      config: [{subnet: "${AFDS_INTERNAL_SUBNET:-172.31.250.0/24}"}]
+  public: {}
+secrets:
+  database_url: {file: "${AFDS_DATABASE_URL_SECRET:?Set private database URL file}"}
+  database_password: {file: "${AFDS_DATABASE_PASSWORD_SECRET:?Set private database password file}"}
+  tls_certificate: {file: "${AFDS_TLS_CERTIFICATE:?Set TLS certificate file}"}
+  tls_private_key: {file: "${AFDS_TLS_PRIVATE_KEY:?Set TLS key file}"}

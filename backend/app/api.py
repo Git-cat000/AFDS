@@ -312,12 +312,28 @@ def edit_plan(project_id: UUID, plan_id: UUID, body: PlanEdit, request: Request)
 
 
 @router.get("/models")
-def models(request: Request):
+def models(request: Request, project_id: UUID | None = None):
+    from app.access import require_project_access
     from app.adapters import providers
+    from app.candidate_store import CandidateStore
     from app.provider_settings import CAPABILITIES, ProviderStore
 
     result = providers(request.app.state.settings)
+    if project_id is not None:
+        require_project_access(request, project_id, "read")
+        engine(request).read(project_id)
+    store = CandidateStore(request.app.state.database)
+    profiles = {profile["id"]: profile for profile in store.list()}
+    authorized = {
+        identity
+        for identity, profile in profiles.items()
+        if profile.get("all_projects", True)
+        or (project_id is not None and str(project_id) in profile.get("project_ids", []))
+    }
     for config in ProviderStore(request.app.state.database).list()["providers"]:
+        identity = f"default-{config['kind']}"
+        if identity in profiles and identity not in authorized:
+            continue
         verified = config.get("protocol") != "comfyui" or (
             config["health"]["status"] == "connected"
             and config["health"].get("generation_tested", False)
@@ -350,6 +366,34 @@ def models(request: Request):
                 },
                 "adapter_version": "0.2.0",
                 "model_id": config["model"],
+            }
+        )
+    for identity in sorted(authorized):
+        if identity.startswith("default-"):
+            continue
+        profile = profiles[identity]
+        descriptor = store.descriptor(profile)
+        result.append(
+            {
+                "provider_id": identity,
+                "display_name": descriptor.label,
+                "backend_type": "remote",
+                "model_id": descriptor.model,
+                "availability": "disabled"
+                if not descriptor.enabled or descriptor.health == "unhealthy"
+                else "unverified"
+                if profile.get("protocol") == "comfyui"
+                else "available",
+                "capabilities": descriptor.capabilities,
+                "protocol": profile.get("protocol", "openai-compatible"),
+                "pricing": {
+                    "mode": "estimated" if descriptor.estimated_cost is not None else "unknown",
+                    "amount": str(descriptor.estimated_cost)
+                    if descriptor.estimated_cost is not None
+                    else None,
+                    "currency": descriptor.currency,
+                },
+                "adapter_version": "0.7.0",
             }
         )
     return result

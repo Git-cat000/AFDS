@@ -30,6 +30,7 @@ import { api, ApiError, mediaUrl } from "./api";
 import { framesToTime, statusLabel } from "./format";
 import { useStudio } from "./store";
 import { ProviderSettings } from "./ProviderSettings";
+import { queueRoutedRequest } from "./model-routing";
 import { AuxiliaryMedia } from "./AuxiliaryMedia";
 import { JobList } from "./JobList";
 import {
@@ -165,8 +166,9 @@ export function App() {
     queryFn: () => api<Plan[]>(`/projects/${projectId}/plans`),
   });
   const providers = useQuery({
-    queryKey: ["providers"],
-    queryFn: () => api<Provider[]>("/models"),
+    queryKey: ["providers", projectId],
+    queryFn: () =>
+      api<Provider[]>(`/models${projectId ? `?project_id=${projectId}` : ""}`),
   });
   const modelSettings = useQuery({
     queryKey: ["model-settings"],
@@ -174,11 +176,17 @@ export function App() {
     queryFn: () => api<ModelSettings>("/settings/models"),
   });
   const llmProvider =
-    llmChoice || modelSettings.data?.defaults.llm || "mock-director";
+    llmChoice ||
+    (project.data?.routing_policies?.storyboard
+      ? "auto"
+      : modelSettings.data?.defaults.llm || "mock-director");
   const videoProvider =
-    videoChoice || modelSettings.data?.defaults.video || "mock-video-local";
+    videoChoice ||
+    (project.data?.routing_policies?.text_to_video
+      ? "auto"
+      : modelSettings.data?.defaults.video || "mock-video-local");
   const usesRemote =
-    llmProvider.startsWith("openai-") || videoProvider.startsWith("openai-");
+    llmProvider !== "mock-director" || videoProvider !== "mock-video-local";
   const apr = project.data;
   const selectedShot =
     apr?.shots.find(
@@ -247,11 +255,24 @@ export function App() {
     const id = apr.project_id;
     void run(async () => {
       const current = await refreshProject(id);
-      await api(`/projects/${id}/generate`, {
-        base_revision: current.revision,
-        shot_ids: ids,
-        provider_id: videoProvider,
-        allow_remote: remoteConsent,
+      const roles = [
+        ...new Set(
+          current.shots
+            .filter((shot) => ids.includes(shot.id))
+            .flatMap((shot) => Object.keys(shot.reference_images || {})),
+        ),
+      ].sort();
+      await queueRoutedRequest({
+        project: current,
+        path: `/projects/${id}/generate`,
+        capability: "text_to_video",
+        requirements: { units: ids.length, referenceRoles: roles },
+        body: {
+          base_revision: current.revision,
+          shot_ids: ids,
+          provider_id: videoProvider,
+          allow_remote: remoteConsent,
+        },
       });
     });
   }
@@ -389,7 +410,7 @@ export function App() {
         </button>
         <div className="rail-bottom">
           <span className="online-dot" />
-          本地工作区<small>v0.7.0 · FILM STUDIO</small>
+          本地工作区<small>v0.8.0 · FILM STUDIO</small>
         </div>
       </aside>
       <main className="workspace">
@@ -576,6 +597,7 @@ export function App() {
                       setRemoteConsent(false);
                     }}
                   >
+                    <option value="auto">按项目路由策略</option>
                     {providers.data
                       ?.filter((p) => p.capabilities.includes("storyboard"))
                       .map((p) => (
@@ -609,6 +631,7 @@ export function App() {
                       setRemoteConsent(false);
                     }}
                   >
+                    <option value="auto">按项目路由策略</option>
                     {providers.data
                       ?.filter((p) =>
                         [
@@ -673,7 +696,7 @@ export function App() {
                   setReferenceAssignment({ assetId, shotId, role, remove })
                 }
                 canGenerate={
-                  !(videoProvider.startsWith("openai-") && !remoteConsent)
+                  !(videoProvider !== "mock-video-local" && !remoteConsent)
                 }
                 dock={
                   activeTool !== "storyboard" ? (
@@ -720,7 +743,8 @@ export function App() {
                               busy ||
                               planningCount > 0 ||
                               !message.trim() ||
-                              (llmProvider === "openai-llm" && !remoteConsent)
+                              (llmProvider !== "mock-director" &&
+                                !remoteConsent)
                             }
                             onClick={() =>
                               void run(() =>

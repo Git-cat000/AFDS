@@ -3,9 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, Database, HardDrive, RefreshCw } from "lucide-react";
 import { api } from "./api";
 import { statusLabel } from "./format";
+import { WorkerNodes, type WorkerNode } from "./WorkerNodes";
+import { useSession } from "./session";
 import "./operations.css";
 
 type RuntimeStatus = {
+  nodes?: WorkerNode[];
   status: string;
   database: { status: string; schema_version: string | null };
   worker: {
@@ -227,10 +230,13 @@ function TaskGraph({
 }
 
 export function OperationsDashboard({ projectId }: { projectId?: string }) {
+  const { session } = useSession();
+  const canAdmin = session.mode === "local" || !!session.user?.is_admin;
   const runtime = useQuery({
     queryKey: ["runtime-status"],
     queryFn: () => api<RuntimeStatus>("/system/status"),
     refetchInterval: 5000,
+    enabled: canAdmin,
   });
   const project = useQuery({
     queryKey: ["operations", projectId],
@@ -238,17 +244,14 @@ export function OperationsDashboard({ projectId }: { projectId?: string }) {
     enabled: !!projectId,
     refetchInterval: 5000,
   });
-  const status = runtime.data,
+  const status = canAdmin ? runtime.data : undefined,
     metrics = project.data;
   return (
     <section className="page operations-page">
       <header className="operations-header">
         <div>
-          <p className="eyebrow">LOCAL WORKSPACE</p>
           <h1>运行概览</h1>
-          <p className="muted">
-            每 5 秒读取本机状态，不会触发模型调用或修改任务。
-          </p>
+          <p className="muted">每 5 秒更新运行状态、节点心跳与项目指标。</p>
         </div>
         <button
           onClick={() => {
@@ -260,7 +263,9 @@ export function OperationsDashboard({ projectId }: { projectId?: string }) {
           刷新运行状态
         </button>
       </header>
-      <LocalMaintenance key={projectId || "global"} projectId={projectId} />
+      {canAdmin && (
+        <LocalMaintenance key={projectId || "global"} projectId={projectId} />
+      )}
       {(runtime.isError || project.isError) && (
         <p role="alert">暂时无法读取运行状态，请刷新或检查本机 API。</p>
       )}
@@ -316,6 +321,12 @@ export function OperationsDashboard({ projectId }: { projectId?: string }) {
             </p>
           </article>
         </div>
+      )}
+      {status && (
+        <WorkerNodes
+          nodes={status.nodes || []}
+          onChanged={() => void runtime.refetch()}
+        />
       )}
       {!projectId && (
         <div className="panel operations-empty">

@@ -3,6 +3,7 @@ import type {
   ProductionStage,
   SkillResult,
 } from "./skill-types";
+import type { Capability, RoutingPolicy } from "./routing-types";
 
 export type Format = {
   fps_num: number;
@@ -94,6 +95,7 @@ export type AssetVersion = {
   generated_by_job_id: string;
 };
 export type Project = {
+  routing_policies?: Partial<Record<Capability, RoutingPolicy>>;
   production_guidance?: Partial<Record<ProductionStage, GuidanceSnapshot[]>>;
   project_id: string;
   title: string;
@@ -186,6 +188,8 @@ export type Plan = {
   estimated_cost: { status: string; amount: number | null };
 };
 export type Job = {
+  worker_node_id?: string | null;
+  worker_generation?: string | null;
   actor_id?: string | null;
   execution_actor_id?: string | null;
   project_id: string;

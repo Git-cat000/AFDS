@@ -16,7 +16,8 @@ from app.history_service import owned_header
 from app.llm_adapter import propose_story
 from app.media import Cancelled
 from app.project_engine import ProjectEngine, emit, find
-from app.provider_settings import ProviderStore
+from app.routing_schema import RoutingRequirements
+from app.routing_service import RoutingService
 from app.schemas import DirectorRequest, new_id
 from app.skill_schema import add_guidance
 
@@ -38,7 +39,6 @@ class PlanningService:
     def enqueue(self, project_id, kind, body):
         submitted = body.model_dump(mode="json")
         key = f"{project_id}:planning:{body.request_id}"
-        store = ProviderStore(self.database)
         with self.database.transaction() as connection:
             owned_header(connection, project_id)
             prior = (
@@ -48,9 +48,20 @@ class PlanningService:
             )
             if prior:
                 from app.execution.queue import serialize
+                from app.identity_context import actor_id
 
                 job = serialize(prior)
-                if job["request"]["input"] != submitted or job["operation"] != f"plan_{kind}":
+                model = StoryPlanningRequest if kind == "storyboard" else SemanticPlanningRequest
+                previous = model.model_validate(job["request"]["input"]).model_dump(mode="json")
+                actor = actor_id(self.database.settings)
+                compatible_actor = job.get("actor_id") == actor or (
+                    self.database.settings.mode == "local" and job.get("actor_id") is None
+                )
+                if (
+                    previous != submitted
+                    or job["operation"] != f"plan_{kind}"
+                    or not compatible_actor
+                ):
                     raise DomainError(
                         "REQUEST_ID_CONFLICT",
                         "Planning request ID was used for different input",
@@ -59,24 +70,39 @@ class PlanningService:
                 return public_job(job)
             apr = self.engine.load(connection, project_id)
             self.engine.check_revision(apr, body.base_revision)
-            provider_id = (
-                (body.provider_id or store.list()["defaults"]["llm"])
-                if kind == "storyboard"
-                else ("openai-llm" if body.mode == "llm" else "deterministic-fields")
-            )
-            if provider_id not in {"mock-director", "openai-llm", "deterministic-fields"}:
-                raise DomainError("MODEL_UNAVAILABLE", "Unknown planning provider", 422)
             if kind == "semantic":
                 shots = [find(apr["shots"], sid) for sid in body.shot_ids]
                 if any(shot["status"] == "archived" for shot in shots):
                     raise DomainError("SHOT_ARCHIVED", "Select active shots", 409)
             snapshot = None
-            if provider_id == "openai-llm":
-                if not body.allow_remote:
-                    raise DomainError(
-                        "REMOTE_CONSENT_REQUIRED", "Approve sharing and provider charges", 409
+            provider_id = "deterministic-fields"
+            if kind == "storyboard" or body.mode == "llm":
+                selected = RoutingService(self.database).choose(
+                    connection,
+                    apr,
+                    "storyboard",
+                    provider_id=(
+                        body.provider_id
+                        or (
+                            "auto"
+                            if "storyboard" in apr.get("routing_policies", {})
+                            else "openai-llm"
+                        )
                     )
-                snapshot = store.snapshot(provider_id, "storyboard")
+                    if kind == "semantic"
+                    else body.provider_id,
+                    allow_remote=body.allow_remote,
+                    preview_id=body.route_preview_id,
+                    requirements=RoutingRequirements(remote_only=kind == "semantic"),
+                )
+                provider_id = selected["provider_id"]
+                snapshot = None if selected.get("is_mock") else selected
+                if kind == "semantic" and snapshot is None:
+                    raise DomainError(
+                        "CAPABILITY_UNSUPPORTED",
+                        "Semantic model editing needs an LLM connection",
+                        422,
+                    )
             context = {
                 key: copy.deepcopy(value)
                 for key, value in apr.items()
@@ -136,10 +162,9 @@ class PlanningService:
                         "Check provider usage and approve a new request before resubmitting",
                         409,
                     )
-                store = ProviderStore(self.database)
-                if not store.runtime("llm")["enabled"]:
-                    raise DomainError("MODEL_UNAVAILABLE", "Provider was disabled", 422)
-                config = store.runtime("llm", request["provider_config"]["revision"])
+                config = RoutingService(self.database).runtime(
+                    request["provider_config"], job["project_id"]
+                )
                 budget = BudgetService(self.database)
                 budget.enforce(live, config)
                 budget.begin_submission(
@@ -210,6 +235,8 @@ class PlanningService:
                     "explanation": "请审阅修改差异后批准应用。",
                 }
             plan["planning_job_id"] = job["id"]
+            if request.get("provider_config", {}).get("route"):
+                plan["model_route"] = request["provider_config"]["route"]
             if request.get("production_guidance"):
                 plan["production_guidance"] = request["production_guidance"]
             return plan

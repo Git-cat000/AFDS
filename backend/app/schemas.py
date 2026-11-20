@@ -147,6 +147,7 @@ class APR(ProjectCreate):
     world_states: list[dict[str, Any]] = Field(default_factory=list)
     continuity_links: list[dict[str, Any]] = Field(default_factory=list)
     production_guidance: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    routing_policies: dict[str, dict[str, Any]] = Field(default_factory=dict, max_length=6)
     scenes: list[Scene] = Field(default_factory=list)
     shots: list[Shot] = Field(default_factory=list)
     timeline: Timeline = Field(default_factory=Timeline)
@@ -171,6 +172,20 @@ class APR(ProjectCreate):
         return {
             stage: [item.model_dump(mode="json") for item in items]
             for stage, items in validate_guidance(value).items()
+        }
+
+    @field_validator("routing_policies")
+    @classmethod
+    def validate_routing_policies(cls, value):
+        from pydantic import TypeAdapter
+
+        from app.routing_schema import Capability, RoutingPolicy
+
+        return {
+            TypeAdapter(Capability).validate_python(key): RoutingPolicy.model_validate(
+                policy
+            ).model_dump(mode="json")
+            for key, policy in value.items()
         }
 
     @field_validator("assets")
@@ -290,6 +305,8 @@ class DirectorRequest(RevisionRequest):
     message: str = Field(default="生成四镜头分镜", min_length=1, max_length=5000)
     provider_id: str | None = None
     allow_remote: bool = False
+    request_id: UUID | None = None
+    route_preview_id: UUID | None = None
 
 
 class TimelineRequest(RevisionRequest):
@@ -301,6 +318,8 @@ class GenerateRequest(RevisionRequest):
     provider_id: str | None = None
     capability: str = "text_to_video"
     allow_remote: bool = False
+    request_id: UUID | None = None
+    route_preview_id: UUID | None = None
 
 
 class MediaGenerateRequest(RevisionRequest):
@@ -309,6 +328,7 @@ class MediaGenerateRequest(RevisionRequest):
     provider_id: str | None = None
     allow_remote: bool = False
     request_id: UUID | None = None
+    route_preview_id: UUID | None = None
 
 
 class RemoteRecoveryRequest(Schema):

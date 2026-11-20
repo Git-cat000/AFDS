@@ -23,8 +23,10 @@ def create_app(settings: Settings | None = None):
 
     application.state.database = Database(config)
     from app.collaboration_api import router as collaboration_router
+    from app.routing_api import router as routing_router
 
     application.include_router(collaboration_router, prefix="/api/v1")
+    application.include_router(routing_router, prefix="/api/v1")
     application.add_middleware(
         CORSMiddleware,
         allow_origins=config.cors_origins.split(","),
@@ -101,6 +103,16 @@ def create_app(settings: Settings | None = None):
             except FileNotFoundError:
                 media[name] = "unavailable"
         return {"status": "ok", "media": media, "mode": "mock"}
+
+    @application.get("/api/v1/ready")
+    def ready():
+        from app.deployment import readiness
+
+        available = readiness(application.state.database)["ready"]
+        return JSONResponse(
+            status_code=200 if available else 503,
+            content={"status": "ready" if available else "not_ready"},
+        )
 
     @application.get("/api/v1/version")
     def version():

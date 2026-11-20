@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Download, Image, AudioLines, Plus } from "lucide-react";
-import { api, mediaUrl } from "./api";
+import { mediaUrl } from "./api";
 import type { ModelSettings, Project } from "./types";
+import { queueRoutedRequest, useRoutingInventory } from "./model-routing";
 
 export function AuxiliaryMedia({
   project,
@@ -23,7 +24,27 @@ export function AuxiliaryMedia({
   const [kind, setKind] = useState<"image" | "speech">("image");
   const [prompt, setPrompt] = useState("");
   const [consent, setConsent] = useState(false);
+  const [choice, setChoice] = useState("");
+  const routing = useRoutingInventory(project.project_id);
+  const capability = kind === "image" ? "text_to_image" : "text_to_speech";
+  const candidates =
+    routing.data?.candidates?.filter((value) =>
+      value.capabilities.includes(capability),
+    ) || [];
   const config = settings?.providers.find((item) => item.kind === kind);
+  const legacyDefault = settings?.defaults[kind]?.replace(
+    /^openai-/,
+    "default-",
+  );
+  const providerId =
+    choice ||
+    (routing.data?.policies?.[capability]
+      ? "auto"
+      : legacyDefault || candidates.find((value) => value.enabled)?.id);
+  const ready =
+    providerId === "auto" ||
+    candidates.some((value) => value.id === providerId && value.enabled) ||
+    !!config?.enabled;
   const referenceIds = new Set(
     project.asset_versions.flatMap((v) => [v.asset_id, v.poster_asset_id]),
   );
@@ -40,18 +61,42 @@ export function AuxiliaryMedia({
             素材类型
             <select
               value={kind}
-              onChange={(e) => setKind(e.target.value as "image" | "speech")}
+              onChange={(e) => {
+                setKind(e.target.value as "image" | "speech");
+                setChoice("");
+                setConsent(false);
+              }}
             >
               <option value="image">参考图像</option>
               <option value="speech">语音旁白</option>
             </select>
           </label>
-          <div className="aux-model">
-            <small>使用模型</small>
-            <strong>
-              {config?.enabled ? config.model : "请先在模型与工具中启用连接"}
-            </strong>
-          </div>
+          <label>
+            素材模型
+            <select
+              aria-label="素材模型"
+              value={providerId || ""}
+              onChange={(event) => {
+                setChoice(event.target.value);
+                setConsent(false);
+              }}
+            >
+              <option value="">选择已配置连接</option>
+              <option value="auto">按项目路由策略</option>
+              {candidates.map((value) => (
+                <option
+                  key={value.id}
+                  value={value.id}
+                  disabled={!value.enabled}
+                >
+                  {value.label} · {value.model}
+                </option>
+              ))}
+              {!candidates.length && config?.enabled && (
+                <option value={legacyDefault}>{config.model}</option>
+              )}
+            </select>
+          </label>
         </div>
         <label>
           {kind === "image" ? "图像描述" : "旁白文本"}
@@ -72,17 +117,21 @@ export function AuxiliaryMedia({
         </label>
         <button
           className="primary"
-          disabled={busy || !config?.enabled || !consent || !prompt.trim()}
+          disabled={busy || !ready || !consent || !prompt.trim()}
           onClick={() =>
             void run(async () => {
-              await api(`/projects/${project.project_id}/media`, {
-                base_revision: project.revision,
-                operation:
-                  kind === "image" ? "generate_image" : "generate_speech",
-                prompt,
-                provider_id: settings?.defaults[kind],
-                allow_remote: true,
-                request_id: crypto.randomUUID(),
+              await queueRoutedRequest({
+                project,
+                path: `/projects/${project.project_id}/media`,
+                capability,
+                body: {
+                  base_revision: project.revision,
+                  operation:
+                    kind === "image" ? "generate_image" : "generate_speech",
+                  prompt,
+                  provider_id: providerId,
+                  allow_remote: true,
+                },
               });
               setConsent(false);
             })

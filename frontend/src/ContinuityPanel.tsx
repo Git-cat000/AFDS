@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { queuePlanning, type JobPage } from "./history";
 import { api } from "./api";
 import "./continuity.css";
+import type { Project as StudioProject } from "./types";
 
 type Bible = {
   id: string;
@@ -50,6 +51,7 @@ type Shot = {
   output_state_ref?: string | null;
 };
 type Project = {
+  routing_policies?: StudioProject["routing_policies"];
   project_id: string;
   revision: number;
   shots: Shot[];
@@ -300,6 +302,9 @@ export function ContinuityPanel({
             await queuePlanning(project.project_id, "semantic", {
               base_revision: project.revision,
               ...body,
+              ...(body.mode === "llm" && project.routing_policies?.storyboard
+                ? { provider_id: "auto" }
+                : {}),
             });
           })
         }

@@ -138,6 +138,9 @@ class SemanticEditRequest(RevisionRequest):
     fields: SemanticFields | None = None
     message: str = Field(default="", max_length=5000)
     allow_remote: bool = False
+    provider_id: str | None = Field(default=None, max_length=100)
+    request_id: UUID | None = None
+    route_preview_id: UUID | None = None
 
     @model_validator(mode="after")
     def valid_scope(self):

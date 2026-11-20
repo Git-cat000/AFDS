@@ -40,7 +40,22 @@ function setup() {
       const body = JSON.parse(String(options?.body || "{}"));
       requests.push({ url, body });
       let value: unknown;
-      if (url.endsWith("/settings/models"))
+      if (url.endsWith("/routing"))
+        value = {
+          policies: {},
+          candidates: [
+            {
+              id: "openai-transcription",
+              kind: "transcription",
+              enabled: true,
+              timestamps: true,
+              model: "DEMO-asr",
+              label: "DEMO ASR",
+              capabilities: ["transcription"],
+            },
+          ],
+        };
+      else if (url.endsWith("/settings/models"))
         value = {
           providers: [
             {
@@ -53,6 +68,7 @@ function setup() {
           ],
         };
       else if (url.includes("/analysis?")) value = [];
+      else if (url.endsWith("/routing/preview")) value = { id: "DEMO-route" };
       else if (url.endsWith("/preview"))
         value = {
           preview_token: "hash",
@@ -169,4 +185,14 @@ it("reuses the submitted identity after a lost response and a background revisio
   );
   const sent = requests.filter((r) => r.url.endsWith("/analysis"));
   expect(sent[1].body).toEqual(sent[0].body);
+});
+
+it("reads transcription candidates through project access", async () => {
+  const { requests } = setup();
+  await waitFor(() =>
+    expect(requests.some((value) => value.url.endsWith("/routing"))).toBe(true),
+  );
+  expect(requests.some((value) => value.url.endsWith("/settings/models"))).toBe(
+    false,
+  );
 });

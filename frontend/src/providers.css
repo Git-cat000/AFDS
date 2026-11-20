@@ -445,6 +445,32 @@
   padding: 16px 0;
   border-top: 1px solid var(--line);
 }
+.candidate-settings > summary,
+.project-routing > summary {
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+.candidate-settings fieldset,
+.project-routing fieldset {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 12px 0;
+}
+.candidate-settings,
+.project-routing,
+.route-explanation {
+  overflow-wrap: anywhere;
+}
+.project-routing .check-label {
+  align-items: flex-start;
+  margin: 10px 0;
+}
+.route-explanation {
+  border-left: 2px solid var(--line);
+  padding-left: 12px;
+  margin: 12px 0;
+}
 .charge-reference {
   display: block;
   overflow-wrap: anywhere;

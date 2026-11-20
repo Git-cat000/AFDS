@@ -202,9 +202,15 @@ class ProviderStore:
 
     def mark_media_verified(self, connection, config, media_type):
         db.lock_named_resource(connection, "provider-store")
-        key = f"provider-health:{config['kind']}:{config['revision']}"
+        identity = config.get("connection_id")
+        custom = identity and identity != f"default-{config['kind']}"
+        key = (
+            f"candidate-health:{identity}:{config['revision']}"
+            if custom
+            else f"provider-health:{config['kind']}:{config['revision']}"
+        )
         payload = {
-            "status": "connected",
+            "status": "healthy" if custom else "connected",
             "generation_tested": True,
             "verified_media_type": media_type,
             "checked_at": time.time(),
@@ -281,6 +287,9 @@ class ProviderStore:
             else:
                 connection.execute(insert(db.provider_configs).values(id=kind, **values))
             connection.execute(insert(db.provider_revisions).values(provider_id=kind, **values))
+            from app.candidate_store import CandidateStore
+
+            CandidateStore.mirror_legacy(connection, kind, values)
             return self.public(kind, values)
 
     def runtime(self, kind, revision=None):

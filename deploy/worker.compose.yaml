@@ -1,0 +1,62 @@
+name: afds-remote-worker
+
+services:
+  worker:
+    image: ${AFDS_RUNTIME_IMAGE:?Set the trusted immutable runtime image}
+    pull_policy: never
+    command:
+      - python
+      - -m
+      - app.execution.worker
+      - --node-id
+      - ${AFDS_NODE_ID:?Set a unique stable node ID}
+      - --label
+      - ${AFDS_NODE_LABEL:-Media worker}
+      - --slots
+      - ${AFDS_WORKER_SLOTS:-1}
+      - --operations
+      - generate_video
+      - generate_image
+      - generate_speech
+      - render_timeline
+      - render_preview
+      - import_video
+      - import_image
+      - import_audio
+      - analyze_beats
+      - transcribe_audio
+      - plan_storyboard
+      - plan_semantic
+      - review_shot
+      - export_project
+      - restore_project
+      - check_production
+      - cleanup_storage
+    environment:
+      AFDS_MODE: team
+      AFDS_DATABASE_URL: ${AFDS_DATABASE_URL:?Set the internal PostgreSQL URL}
+      AFDS_DATA_DIR: /data
+      AFDS_WORKER_CACHE_DIR: /tmp/afds-worker
+      AFDS_LEASE_SECONDS: ${AFDS_LEASE_SECONDS:-30}
+      AFDS_MEDIA_TIMEOUT: ${AFDS_MEDIA_TIMEOUT:-180}
+    volumes:
+      - type: bind
+        source: ${AFDS_SHARED_STORE:?Mount the API shared asset store}
+        target: /data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=${AFDS_WORKER_CACHE_BYTES:-1073741824}
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    cpus: ${AFDS_WORKER_CPUS:-2}
+    mem_limit: ${AFDS_WORKER_MEMORY:-2g}
+    stop_grace_period: 90s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

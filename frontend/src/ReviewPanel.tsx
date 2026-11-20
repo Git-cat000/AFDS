@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, mediaUrl } from "./api";
 import type { ModelSettings, Project } from "./types";
 import "./reviews.css";
+import { queueRoutedRequest, useRoutingInventory } from "./model-routing";
 
 type Report = {
   id: string;
@@ -55,7 +56,12 @@ export function ReviewPanel({
   const [mode, setMode] = useState<"deterministic" | "vision">("deterministic");
   const [consent, setConsent] = useState(false);
   const profile = settings?.providers.find((p) => p.kind === "llm");
-  const vision = !!profile?.enabled && !!profile.vision_enabled;
+  const routing = useRoutingInventory(project.project_id);
+  const vision =
+    (!!profile?.enabled && !!profile.vision_enabled) ||
+    !!routing.data?.candidates?.some(
+      (value) => value.enabled && value.capabilities.includes("visual_review"),
+    );
   const reports = useQuery({
     queryKey: ["reviews", project.project_id],
     queryFn: () => api<Report[]>(`/projects/${project.project_id}/reviews`),
@@ -147,11 +153,17 @@ export function ReviewPanel({
           }
           onClick={() =>
             void run(async () => {
-              await api(`/projects/${project.project_id}/reviews`, {
-                base_revision: project.revision,
-                shot_ids: selected,
-                mode,
-                allow_remote: mode === "vision" && consent,
+              await queueRoutedRequest({
+                project,
+                path: `/projects/${project.project_id}/reviews`,
+                capability: "visual_review",
+                requirements: { units: selected.length },
+                body: {
+                  base_revision: project.revision,
+                  shot_ids: selected,
+                  mode,
+                  allow_remote: mode === "vision" && consent,
+                },
               });
               setConsent(false);
             })

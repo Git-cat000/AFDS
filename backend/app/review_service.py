@@ -12,11 +12,13 @@ from sqlalchemy import insert, select
 
 from app import db
 from app.errors import DomainError
-from app.execution.queue import Queue, digest, public_job
+from app.execution.queue import Queue, public_job, request_digest, serialize
+from app.identity_context import actor_id
 from app.media import probe, run_process
 from app.project_engine import ProjectEngine, emit, find
 from app.provider_http import ProviderError, ProviderHTTP, reject_credential_output
-from app.provider_settings import ProviderStore
+from app.routing_schema import RoutingRequirements
+from app.routing_service import RoutingService
 from app.schemas import RevisionRequest, Schema, new_id
 from app.storage import asset_path, file_hash, import_asset
 
@@ -26,6 +28,9 @@ class ReviewRequest(RevisionRequest):
     mode: Literal["deterministic", "vision"] = "deterministic"
     frame_count: int = Field(default=3, ge=2, le=5)
     allow_remote: bool = False
+    provider_id: str | None = Field(default=None, max_length=100)
+    route_preview_id: UUID | None = None
+    request_id: UUID | None = None
 
 
 class Finding(Schema):
@@ -114,10 +119,50 @@ class ReviewService:
                     "Approve sharing keyframes and continuity context",
                     409,
                 )
-            config = ProviderStore(self.database).snapshot("openai-llm", "visual_review")
         with self.database.transaction() as connection:
             apr = self.engine.load(connection, project_id)
+            submitted = body.model_dump(mode="json")
+            keys = (
+                {str(sid): f"{project_id}:review:{body.request_id}:{sid}" for sid in body.shot_ids}
+                if body.request_id
+                else {}
+            )
+            if keys:
+                prior = (
+                    connection.execute(
+                        select(db.jobs).where(
+                            db.jobs.c.project_id == str(project_id),
+                            db.jobs.c.payload["operation"].as_string() == "review_shot",
+                            db.jobs.c.idempotency_key.startswith(
+                                f"{project_id}:review:{body.request_id}:"
+                            ),
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                if prior:
+                    if {row["payload"]["target_entity_id"] for row in prior} != set(keys) or any(
+                        row["payload"].get("submitted_input") != submitted
+                        or row["payload"].get("actor_id") != actor_id(self.database.settings)
+                        for row in prior
+                    ):
+                        raise DomainError(
+                            "REQUEST_ID_CONFLICT", "Review request ID has different input", 409
+                        )
+                    indexed = {row["payload"]["target_entity_id"]: serialize(row) for row in prior}
+                    return [public_job(indexed[sid]) for sid in keys]
             self.engine.check_revision(apr, body.base_revision)
+            if body.mode == "vision":
+                config = RoutingService(self.database).choose(
+                    connection,
+                    apr,
+                    "visual_review",
+                    provider_id=body.provider_id,
+                    allow_remote=body.allow_remote,
+                    preview_id=body.route_preview_id,
+                    requirements=RoutingRequirements(units=len(set(body.shot_ids))),
+                )
             jobs = [
                 self.queue.enqueue(
                     connection,
@@ -125,6 +170,8 @@ class ReviewService:
                     "review_shot",
                     review_request(apr, sid, body.mode, body.frame_count, config),
                     str(sid),
+                    idempotency_key=keys.get(str(sid)),
+                    submitted_input=submitted if body.request_id else None,
                 )
                 for sid in dict.fromkeys(body.shot_ids)
             ]
@@ -161,7 +208,7 @@ class ReviewService:
                         request["frame_count"],
                         request.get("provider_config"),
                     )
-                    report["stale"] = digest(current) != report["source_fingerprint"]
+                    report["stale"] = request_digest(current) != report["source_fingerprint"]
                 except DomainError:
                     report["stale"] = True
                 reports.append(report)
@@ -259,11 +306,9 @@ class ReviewService:
         from app.budget import BudgetService
 
         snapshot = job["request"]["provider_config"]
-        store = ProviderStore(self.database)
-        current = store.runtime("llm")
-        if not current["enabled"] or not current.get("vision_enabled"):
-            raise DomainError("MODEL_UNAVAILABLE", "Vision review was disabled", 422)
-        config = store.runtime("llm", snapshot["revision"])
+        config = RoutingService(self.database).runtime(
+            snapshot, job["project_id"], capability="visual_review"
+        )
         BudgetService(self.database).enforce(self.engine.read(job["project_id"]), config)
         if job.get("submission_started"):
             raise ProviderError(
@@ -364,7 +409,7 @@ class ReviewService:
             request = job["request"]
             try:
                 fresh = (
-                    digest(
+                    request_digest(
                         review_request(
                             apr,
                             job["target_entity_id"],

@@ -71,3 +71,33 @@ AFDS_TEST_TEAM_BROWSER=1 AFDS_TEST_COLLAB_BROWSER=1 AFDS_TEST_POSTGRES_URL=<test
 ```
 
 PowerShell 使用 `$env:VARIABLE='value'` 设置这些环境变量。测试数据库必须由验收环境提供，数据目录位于忽略的 `data/browser-tests/`。部署时的跨主机节点、共享挂载和 TLS 配置见后续部署指南。
+
+## 远程 Worker 节点
+
+团队节点使用同一个 PostgreSQL 数据库和逻辑素材存储。先在 API 使用的存储挂载上初始化命名空间，再启动节点。
+
+```sh
+python -m app.worker_registry init-storage
+python -m app.execution.worker --node-id studio-worker-1 --label Studio --slots 2 --operations generate_video render_timeline render_preview
+```
+
+节点 ID 在部署内保持唯一且稳定。重启相同 ID 会生成新的运行代次，旧进程的心跳、媒体回写和错误回写受到代次及任务租约围栏保护。PostgreSQL 按节点槽位原子领取任务，SQLite 保持全局单任务运行行为。
+
+`--operations` 显式指定允许的任务。节点会检测 FFmpeg、ffprobe、脚本解释器和可用的固定容器镜像。空闲时重新发现新增运行能力。已开始的任务继续使用其固定请求、连接版本和审批来源。运行概览显示节点能力、当前任务、槽位、版本、心跳与共享存储检查结果，管理员可排空或恢复接单。维护节点时先排空并等待当前任务结束。
+
+存储初始化在数据库中锚定 `state/worker-store.json` 的摘要。节点检查该标记，并执行读写回读探针。挂载缺失或命名空间不符时停止领取任务。上传暂存文件和不可变素材使用共享根目录内的相对路径，节点本机路径可不同。`AFDS_WORKER_CACHE_DIR` 指定节点临时缓存目录，默认采用共享根目录的 `cache`。独立节点可使用自己的本机目录或临时卷。
+
+### Linux 运行镜像与节点模板
+
+```sh
+python scripts/build_worker.py
+docker compose --env-file <private-worker-environment> -f deploy/worker.compose.yaml up -d
+```
+
+构建脚本记录实际镜像身份到本机 `data/worker/image.json`。模板需要 `AFDS_RUNTIME_IMAGE`、`AFDS_NODE_ID`、`AFDS_DATABASE_URL` 和 `AFDS_SHARED_STORE`，可配置标签、槽位、CPU、内存、缓存容量和媒体超时。数据库连接由部署环境提供，通过内部网络访问 PostgreSQL。共享目录需允许容器用户 `10001:10001` 读写。镜像内固定 Python 基底、FFmpeg 和字体，包含中文字幕渲染所需的 Noto CJK 字体。
+
+模板配置媒体与工程任务。脚本控制节点需要可访问已批准镜像的 Docker 控制器，并将容器运行器使用的路径正确映射到该控制器所在主机。每次脚本启动记录 Docker 控制器身份，清理时只处理当前控制器的运行。失联脚本继续按照结果未知与重新审批规则恢复。完整生产编排与脚本控制节点配置在部署阶段提供。
+
+## 部署、路由与维护
+
+生产服务布局、HTTPS、独立迁移、节点及系统快照见 [部署指南](DEPLOYMENT.md)。候选连接、项目授权、预算排序及未知结果恢复见 [模型路由](MODEL_ROUTING.md)。本轮 Docker / 跨运行环境验收按用户要求暂缓；既有 PostgreSQL 验收不替代新增迁移及部署模板的实际演练。

@@ -238,6 +238,7 @@ export function useCollaborativeBoard(project: Project, enabled: boolean) {
           operations: submitted.operations,
         });
         if (!active) return;
+        if (submitted.redo) advanceRedos(submitted.operations, saved);
         pending = undefined;
         commits.current.push({
           operations: submitted.operations,
@@ -276,6 +277,19 @@ export function useCollaborativeBoard(project: Project, enabled: boolean) {
         timer = setTimeout(() => void flush(), 250);
     }
 
+    function advanceRedos(operations: WorkspaceOperation[], saved: Snapshot) {
+      for (const item of operations) {
+        const key = `${item.kind.includes("edge") ? "edge" : "node"}/${item.entity_id}`;
+        for (const group of redos.current) {
+          if (group.versions[key] === base.entity_versions[key])
+            group.versions = {
+              ...group.versions,
+              [key]: saved.entity_versions[key],
+            };
+        }
+      }
+    }
+
     async function undo() {
       if (
         !active ||
@@ -295,6 +309,7 @@ export function useCollaborativeBoard(project: Project, enabled: boolean) {
         });
         if (!active) return;
         commits.current.pop();
+        advanceRedos(group.operations, saved);
         redos.current.push({ ...group, versions: saved.entity_versions });
         accept(saved, before);
       } catch (error) {

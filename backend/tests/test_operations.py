@@ -2,7 +2,7 @@ import json
 import time
 from uuid import uuid4
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, select
 
 from app import db
 from app.execution.queue import Queue
@@ -27,7 +27,7 @@ def test_missing_composition_filter_degrades_diagnostics(client, monkeypatch):
     assert data["status"] == "degraded"
 
 
-def test_diagnostics_truthfully_tracks_idle_active_and_stale_worker(client):
+def test_diagnostics_truthfully_tracks_idle_active_and_stale_worker(client, monkeypatch):
     database = client.app.state.database
     initial = client.get("/api/v1/system/status")
     assert initial.status_code == 200
@@ -46,8 +46,8 @@ def test_diagnostics_truthfully_tracks_idle_active_and_stale_worker(client):
     assert status["storage"]["free_bytes"] > 0
     assert all(value == "available" for value in status["tools"].values())
     assert str(database.settings.data_dir) not in json.dumps(status)
-    with database.transaction() as connection:
-        connection.execute(update(db.worker_heartbeats).values(last_seen_at=time.time() - 60))
+    now = time.time()
+    monkeypatch.setattr("app.operations_service.time.time", lambda: now + 60)
     assert client.get("/api/v1/system/status").json()["worker"]["status"] == "offline"
     apr = ProjectEngine(database).create(ProjectCreate(title="DEMO liveness"))
     with database.transaction() as connection:

@@ -362,3 +362,13 @@ Imported skill packages use project-scoped `/projects/{id}/skills/library`, impo
 Single-operation `/workspace/operations/{operation_id}/undo` and atomic `/workspace/undo` with `operation_ids` apply conditional own inverses. Current entity versions and references protect later work. Legacy whole-document writes and restores advance the same entity versions. Migration0009a preserves supported200-character edge IDs plus their namespace.
 
 `GET /projects/{id}/events/stream?after=<cursor>` provides SSE project events with persistent IDs,100-row pages,500ms polling and15-second heartbeats. Last-Event-ID resumes the stream. Cursors beyond the10000-event replay window receive `snapshot_required`. Session/member revocation emits `access_revoked` and closes the stream. `PUT /projects/{id}/presence` accepts nullable `entity_id`, including for viewers. Presence updates every2seconds, expires after15seconds and filters inactive/revoked users and sessions. All writes retain CSRF protection.
+
+## Worker nodes and model routing
+
+GET /system/workers lists node capacities, incarnations, runtime probes and storage status. Admins POST /system/workers/{id}/drain with a draining boolean; running tasks continue.
+
+Admin-only GET /settings/candidates, PUT /settings/candidates/{id} (kind and connection), and POST /settings/candidates/{id}/test manage independently versioned connections. Reads mask secrets; writes include the current connection revision.
+
+Project members GET /projects/{id}/routing. Owners PUT /projects/{id}/routing/policy with base_revision and policies. POST /projects/{id}/routing/preview accepts base_revision, capability, optional provider_id, allow_remote and requirements (units, timestamps, reference_roles, remote_only). Ten-minute previews bind actor, project revision, candidate scope and immutable versions, without submitting or reserving.
+
+Generation entrypoints accept route_preview_id. Planning, video, media and reviews accept request_id; replay preserves the original actor, input, route version and budget obligation before current revision or budget validation. Reviews bind the entire shot batch to that ID and reject changed input. Visual-review route previews require review permission; other capabilities require generation permission. GET /models?project_id=<uuid> filters authorized candidate metadata. See [model routing](MODEL_ROUTING.md).

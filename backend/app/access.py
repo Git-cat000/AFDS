@@ -99,7 +99,7 @@ def check_job_access(connection, job, settings):
 def policy_for(path, methods):
     path = path.removeprefix("/api/v1")
     writing = bool(set(methods) - {"GET", "HEAD", "OPTIONS"})
-    if path in {"/health", "/version", "/auth/login", "/auth/session"}:
+    if path in {"/health", "/ready", "/version", "/auth/login", "/auth/session"}:
         return {"audience": "public", "action": "read"}
     if path == "/auth/logout":
         return {"audience": "authenticated", "action": "edit"}
@@ -123,6 +123,10 @@ def policy_for(path, methods):
             action = "manage_members"
         elif writing and "/budget" in path:
             action = "manage_budget"
+        elif writing and path.endswith("/routing/policy"):
+            action = "manage_budget"
+        elif writing and path.endswith("/routing/preview"):
+            action = "route_preview"
         elif writing and "/skills/scripts" in path:
             action = "run_script"
         elif writing and (path.endswith("/reviews") or "/feedback" in path):
@@ -194,14 +198,26 @@ class AccessRoute(APIRoute):
         handler = super().get_route_handler()
 
         async def secured(request):
-            principal = await run_in_threadpool(authorize, request, policy)
+            request_policy = policy
+            if policy["action"] == "route_preview":
+                try:
+                    body = await request.json()
+                except ValueError:
+                    body = None
+                action = (
+                    "review"
+                    if isinstance(body, dict) and body.get("capability") == "visual_review"
+                    else "generate"
+                )
+                request_policy = {**policy, "action": action}
+            principal = await run_in_threadpool(authorize, request, request_policy)
             token = current_principal.set(principal)
             scope = None
             if principal and policy["audience"] in {"project", "project-query"}:
                 project_id = request.path_params.get("project_id") or request.query_params.get(
                     "project_id"
                 )
-                action = policy["action"]
+                action = request_policy["action"]
                 if action == "job_control":
                     action = request.state.effective_project_action
                 if action == "edit_or_review":

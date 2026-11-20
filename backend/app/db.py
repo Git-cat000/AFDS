@@ -88,6 +88,9 @@ jobs = Table(
     Column("lease_expires_at", Float),
     Column("attempt", Integer, nullable=False, default=0),
     Column("available_at", Float, nullable=False, default=0),
+    Column("worker_node_id", String(100)),
+    Column("worker_generation", String(32)),
+    Column("required_capability", String(200), nullable=False, server_default="python"),
     Column("payload", JSON, nullable=False),
 )
 events = Table(
@@ -266,6 +269,19 @@ workspace_entities = Table(
     Column("project_id", ForeignKey("projects.id"), primary_key=True),
     Column("entity_id", String(205), primary_key=True),
     Column("version", Integer, nullable=False),
+    Column("payload", JSON, nullable=False),
+)
+worker_storage = Table(
+    "worker_storage",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("payload", JSON, nullable=False),
+)
+worker_nodes = Table(
+    "worker_nodes",
+    metadata,
+    Column("id", String(100), primary_key=True),
+    Column("last_seen_at", Float, nullable=False),
     Column("payload", JSON, nullable=False),
 )
 presence = Table(

@@ -19,6 +19,76 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("replays consecutive own redos using versions advanced by own undo and redo", async () => {
+  const state = {
+    project_id: project.project_id,
+    workspace_revision: 1,
+    initialized: true,
+    document: {
+      ...emptyBoard(),
+      nodes: [{ id: "note-a", kind: "note" as const, text: "zero" }],
+    },
+    entity_versions: { "node/note-a": 1 },
+  };
+  const history: string[] = [];
+  const sent: WorkspaceOperation[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, options: RequestInit) => {
+      if (url.endsWith("/presence")) return response([]);
+      if (url.endsWith("/collaboration")) return response(state);
+      if (url.endsWith("/undo")) {
+        state.document.nodes[0].text = history.pop()!;
+      } else {
+        const item = JSON.parse(String(options.body))
+          .operations[0] as WorkspaceOperation;
+        sent.push(item);
+        if (
+          item.expected_entity_version !== state.entity_versions["node/note-a"]
+        )
+          return response(
+            { error: { code: "ENTITY_CONFLICT", message: "DEMO stale redo" } },
+            409,
+          );
+        history.push(state.document.nodes[0].text);
+        state.document.nodes[0].text = (
+          item.value as { node: { text: string } }
+        ).node.text;
+      }
+      state.entity_versions["node/note-a"]++;
+      state.workspace_revision++;
+      return response(state);
+    }),
+  );
+  const { result } = renderHook(() => useCollaborativeBoard(project, true));
+  await waitFor(() => expect(result.current.syncStatus).toBe("协作画布已同步"));
+  for (const text of ["one", "two"]) {
+    act(() =>
+      result.current.change((board) => ({
+        ...board,
+        nodes: [{ id: "note-a", kind: "note", text }],
+      })),
+    );
+    await waitFor(() => expect(state.document.nodes[0].text).toBe(text));
+  }
+  for (const text of ["one", "zero"]) {
+    act(() => result.current.undo());
+    await waitFor(() =>
+      expect(result.current.board.nodes[0]).toMatchObject({ text }),
+    );
+  }
+  for (const text of ["one", "two"]) {
+    act(() => result.current.redo());
+    await waitFor(() =>
+      expect(result.current.board.nodes[0]).toMatchObject({ text }),
+    );
+  }
+  expect(result.current.syncError).toBe("");
+  expect(sent.map((item) => item.expected_entity_version)).toEqual([
+    1, 2, 5, 6,
+  ]);
+});
+
 function server(loseFirst = false) {
   const state = {
     project_id: project.project_id,

@@ -20,7 +20,8 @@ from app.execution.queue import Queue, digest, public_job, serialize
 from app.media import run_process
 from app.project_engine import ProjectEngine, emit, find
 from app.provider_http import ProviderError
-from app.provider_settings import ProviderStore
+from app.routing_schema import RoutingRequirements
+from app.routing_service import RoutingService
 from app.storage import asset_path, contained, ensure_space, file_hash
 from app.timeline_models import MAX_FRAMES, TimelineModel
 from app.timeline_service import validate_timeline
@@ -38,6 +39,7 @@ class AnalysisRequest(TimelineModel):
     language: str | None = Field(default=None, pattern=r"^[a-z]{2,3}(-[A-Za-z]{2,4})?$")
     provider_id: str | None = Field(default=None, max_length=200)
     allow_remote: bool = False
+    route_preview_id: UUID | None = None
 
 
 class ApplyAnalysis(TimelineModel):
@@ -92,9 +94,14 @@ class AnalysisService:
                         "Approve sending this audio and provider charges",
                         409,
                     )
-                store = ProviderStore(self.database)
-                config = store.snapshot(
-                    body.provider_id or store.list()["defaults"]["transcription"], "transcription"
+                config = RoutingService(self.database).choose(
+                    connection,
+                    apr,
+                    "transcription",
+                    provider_id=body.provider_id,
+                    allow_remote=body.allow_remote,
+                    preview_id=body.route_preview_id,
+                    requirements=RoutingRequirements(timestamps=True),
                 )
                 if not config.get("transcription_timestamps"):
                     raise DomainError(
@@ -195,10 +202,7 @@ class AnalysisService:
         from app.transcription_adapter import TranscriptionAdapter
 
         snapshot = job["request"]["provider_config"]
-        store = ProviderStore(self.database)
-        if not store.runtime("transcription")["enabled"]:
-            raise DomainError("MODEL_UNAVAILABLE", "Transcription connection was disabled", 422)
-        config = store.runtime("transcription", snapshot["revision"])
+        config = RoutingService(self.database).runtime(snapshot, job["project_id"])
         if source.stat().st_size > TRANSCRIPTION_WAV_LIMIT:
             compressed = work / "transcription.mp3"
             run_process(

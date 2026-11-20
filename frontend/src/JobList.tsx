@@ -4,6 +4,10 @@ import { api } from "./api";
 import { statusLabel } from "./format";
 import { useCursorPage, type JobPage } from "./history";
 import { ProjectBudget } from "./ProjectBudget";
+import { ProjectRouting } from "./ProjectRouting";
+import { RouteExplanation } from "./RouteExplanation";
+import { useProjectAccess } from "./session";
+import type { RouteDecision } from "./routing-types";
 import { RemoteJobRecovery } from "./RemoteJobRecovery";
 import type { Job, Project } from "./types";
 
@@ -15,12 +19,17 @@ function JobDetail({ job, projectId }: { job: Job; projectId: string }) {
     enabled: open,
     queryFn: () => api<Job>(`/projects/${projectId}/jobs/${job.id}`),
   });
+  const request = detail.data?.request as
+    | { provider_config?: { route?: RouteDecision }; route?: RouteDecision }
+    | undefined;
+  const route = request?.provider_config?.route || request?.route;
   return (
     <details onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>请求与溯源</summary>
       {open && (
         <>
           {detail.error && <p role="alert">{detail.error.message}</p>}
+          {route && <RouteExplanation decision={route} />}
           <pre>
             {detail.data
               ? JSON.stringify(detail.data.request, null, 2)
@@ -33,8 +42,15 @@ function JobDetail({ job, projectId }: { job: Job; projectId: string }) {
             <pre>{JSON.stringify(detail.data.skill_result, null, 2)}</pre>
           )}
           <small>输入哈希 {job.input_summary?.request_hash}</small>
-          {detail.data?.actor_id && <small>发起者 {detail.data.actor_id}</small>}
-          {detail.data?.execution_actor_id && <small>本次执行审批者 {detail.data.execution_actor_id}</small>}
+          {detail.data?.worker_node_id && (
+            <small>执行节点 {detail.data.worker_node_id}</small>
+          )}
+          {detail.data?.actor_id && (
+            <small>发起者 {detail.data.actor_id}</small>
+          )}
+          {detail.data?.execution_actor_id && (
+            <small>本次执行审批者 {detail.data.execution_actor_id}</small>
+          )}
         </>
       )}
     </details>
@@ -52,9 +68,17 @@ export function JobList({
   events: { event_id: number; type: string; timestamp: number }[];
 }) {
   const [state, setState] = useState("all");
+  const access = useProjectAccess(project.project_id);
   return (
     <section className="page compact">
       <ProjectBudget projectId={project.project_id} run={run} busy={busy} />
+      <ProjectRouting
+        key={project.project_id}
+        projectId={project.project_id}
+        run={run}
+        busy={busy}
+        canManage={!!access?.actions.includes("manage_budget")}
+      />
       <label className="job-filter">
         任务状态
         <select value={state} onChange={(e) => setState(e.target.value)}>

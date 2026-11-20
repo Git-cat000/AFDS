@@ -3,7 +3,7 @@
 import copy
 import time
 
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, func, insert, select, update
 
 from app import db
 from app.collaboration_schema import OperationBatch, UndoBatch
@@ -265,7 +265,7 @@ class CollaborationService:
         current = self._snapshot(connection, pid)
         key = payload["key"]
         version = current["entity_versions"].get(key, 0)
-        if version != payload["version"]:
+        if version != payload.get("undo_version", payload["version"]):
             raise DomainError(
                 "ENTITY_CONFLICT",
                 "A later change prevents undo",
@@ -278,6 +278,38 @@ class CollaborationService:
             connection, apr, current["workspace_revision"], lambda _: document, actor
         )
         payload["undo_result"] = self._snapshot(connection, pid)
+        # Reversing an own successor restores its predecessor's state at a new
+        # monotonic version. Only that exact causal predecessor becomes undoable.
+        previous_version = payload["request"]["expected_entity_version"]
+        predecessors = (
+            connection.execute(
+                select(db.workspace_operations).where(
+                    db.workspace_operations.c.project_id == pid,
+                    db.workspace_operations.c.actor_id == actor,
+                    db.workspace_operations.c.payload["key"].as_string() == key,
+                    func.coalesce(
+                        db.workspace_operations.c.payload["undo_version"].as_integer(),
+                        db.workspace_operations.c.payload["version"].as_integer(),
+                    )
+                    == previous_version,
+                )
+            )
+            .mappings()
+            .all()
+        )
+        for predecessor in predecessors:
+            earlier = copy.deepcopy(predecessor["payload"])
+            if earlier.get("undo_result") or predecessor["id"] == str(operation_id):
+                continue
+            earlier["undo_version"] = payload["undo_result"]["entity_versions"][key]
+            connection.execute(
+                update(db.workspace_operations)
+                .where(
+                    db.workspace_operations.c.project_id == pid,
+                    db.workspace_operations.c.id == predecessor["id"],
+                )
+                .values(payload=earlier)
+            )
         connection.execute(
             update(db.workspace_operations)
             .where(

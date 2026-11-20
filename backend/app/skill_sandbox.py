@@ -108,6 +108,18 @@ def docker_command(arguments, timeout=10):
         ) from error
 
 
+def controller_identity():
+    try:
+        identity = json.loads(docker_command(["info", "--format", "{{json .ID}}"], timeout=5))
+    except ValueError as error:
+        raise DomainError(
+            "SANDBOX_UNAVAILABLE", "Docker controller identity is invalid", 422
+        ) from error
+    if not isinstance(identity, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,200}", identity):
+        raise DomainError("SANDBOX_UNAVAILABLE", "Docker controller identity is unavailable", 422)
+    return identity
+
+
 def execution_policy(settings, timeout_seconds):
     image = image_identity(settings)
     try:
@@ -194,9 +206,21 @@ def mount_argument(source, target):
 
 
 def prepare_run(settings, package, script, arguments, context, policy, nonce):
-    package = Path(package).resolve()
-    if not package.is_dir() or not package.is_relative_to(settings.data_dir.resolve()):
-        raise DomainError("INVALID_PATH", "Sandbox package is outside local data", 403)
+    package = Path(package)
+    root_candidates = (settings.data_dir.resolve(), settings.cache_root.resolve())
+    permitted = next(
+        (root for root in root_candidates if package.absolute().is_relative_to(root)), None
+    )
+    if permitted is None or not package.is_dir():
+        raise DomainError("INVALID_PATH", "Sandbox package is outside configured storage", 403)
+    current = permitted
+    for part in package.absolute().relative_to(permitted).parts:
+        current = current / part
+        if current.is_symlink() or getattr(current.lstat(), "st_file_attributes", 0) & 0x400:
+            raise DomainError("INVALID_PATH", "Sandbox package cannot contain links", 403)
+    package = package.resolve()
+    if not package.is_relative_to(permitted):
+        raise DomainError("INVALID_PATH", "Sandbox package is outside configured storage", 403)
     script = safe_name(script)
     context_data = json.dumps(context, ensure_ascii=False, allow_nan=False).encode()
     if (
@@ -207,7 +231,7 @@ def prepare_run(settings, package, script, arguments, context, policy, nonce):
         raise DomainError(
             "SKILL_CONTEXT_LIMIT", "Use bounded context and literal script arguments", 422
         )
-    root = contained(settings.data_dir, f"cache/sandbox/{nonce}")
+    root = contained(settings.cache_root, f"sandbox/{nonce}")
     workspace, control = root / "package", root / "input"
     workspace.mkdir(parents=True)
     control.mkdir()
@@ -295,6 +319,7 @@ def run_container(
     if not checkpoint():
         raise Cancelled()
     nonce = uuid4().hex
+    controller = controller_identity()
     root, workspace, control = prepare_run(
         settings, package, script, arguments, context, policy, nonce
     )
@@ -306,7 +331,7 @@ def run_container(
     output_dir = root / "result" / "outputs"
     try:
         if on_created:
-            on_created({"container_id": None, "run_id": nonce})
+            on_created({"container_id": None, "run_id": nonce, "controller_id": controller})
         raw = docker_command(
             [
                 "create",
@@ -357,7 +382,7 @@ def run_container(
                 "SANDBOX_UNAVAILABLE", "Docker returned an invalid container identity", 422
             )
         if on_created:
-            on_created({"container_id": container_id, "run_id": nonce})
+            on_created({"container_id": container_id, "run_id": nonce, "controller_id": controller})
         description = json.loads(docker_command(["inspect", container_id]))[0]
         verify_container(description, policy)
         events = queue.Queue()

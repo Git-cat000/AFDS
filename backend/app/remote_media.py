@@ -14,7 +14,6 @@ from PIL import Image, UnidentifiedImageError
 from app.errors import DomainError
 from app.media import Cancelled, probe, render, run_process
 from app.provider_http import ProviderError, ProviderHTTP
-from app.provider_settings import ProviderStore
 
 
 @contextmanager
@@ -91,10 +90,9 @@ def execute_remote_media(queue, job, owner, work, checkpoint):
     from app.budget import BudgetService
 
     snapshot = job["request"]["provider_config"]
-    store = ProviderStore(queue.database)
-    if not store.runtime(snapshot["kind"])["enabled"]:
-        raise DomainError("MODEL_UNAVAILABLE", "Provider was disabled in settings", 422)
-    config = store.runtime(snapshot["kind"], snapshot["revision"])
+    from app.routing_service import RoutingService
+
+    config = RoutingService(queue.database).runtime(snapshot, job["project_id"])
     BudgetService(queue.database).enforce(queue.engine.read(job["project_id"]), config)
     transport = ProviderHTTP(config)
     settings = queue.database.settings

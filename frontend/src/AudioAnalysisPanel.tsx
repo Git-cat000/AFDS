@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
-import type { Connection, ModelSettings } from "./types";
+import { prepareRoute, type RoutingInventory } from "./model-routing";
 import type { Composition, EditorProject } from "./TimelineEditor";
 
 type AnalysisJob = {
@@ -43,6 +43,13 @@ const activeStates = [
   "cancel_requested",
 ];
 
+type TranscriptionProfile = {
+  provider_id: string;
+  display_name: string;
+  model: string;
+  transcription_timestamps: boolean;
+};
+
 export function AudioAnalysisPanel({
   project,
   run,
@@ -67,7 +74,7 @@ export function AudioAnalysisPanel({
     ),
   );
   const [language, setLanguage] = useState("");
-  const [profiles, setProfiles] = useState<Connection[]>([]);
+  const [profiles, setProfiles] = useState<TranscriptionProfile[]>([]);
   const [providerId, setProviderId] = useState("");
   const profile =
     profiles.find((item) => item.provider_id === providerId) || profiles[0];
@@ -86,26 +93,45 @@ export function AudioAnalysisPanel({
     body: ApplyBody;
     preview: ApplyPreview;
   } | null>(null);
-  const pending = useRef<{ key: string; id: string; revision: number } | null>(
-    null,
-  );
+  const pending = useRef<{
+    key: string;
+    id: string;
+    revision: number;
+    previewId?: string;
+  } | null>(null);
   const working = !!job && activeStates.includes(job.state);
   const captions = (project.timeline as Composition).captions || [];
   useEffect(() => {
     let active = true;
     void Promise.all([
-      api<ModelSettings>("/settings/models"),
+      api<RoutingInventory>(`/projects/${project.project_id}/routing`),
       api<AnalysisJob[]>(
         `/projects/${project.project_id}/timeline/analysis?limit=20`,
       ),
     ])
       .then(([settings, jobs]) => {
         if (!active) return;
-        setProfiles(
-          settings.providers.filter(
-            (item) => item.kind === "transcription" && item.enabled,
-          ),
-        );
+        const profiles = settings.candidates
+          .filter(
+            (item) =>
+              item.capabilities.includes("transcription") &&
+              item.enabled &&
+              item.health !== "unhealthy",
+          )
+          .map((item) => ({
+            provider_id: item.id,
+            display_name: item.label,
+            model: item.model,
+            transcription_timestamps: !!item.timestamps,
+          }));
+        if (settings.policies.transcription)
+          profiles.unshift({
+            provider_id: "auto",
+            display_name: "项目路由策略",
+            model: "按已保存策略选择",
+            transcription_timestamps: true,
+          });
+        setProfiles(profiles);
         setHistory(jobs);
       })
       .catch(() => {
@@ -168,16 +194,37 @@ export function AudioAnalysisPanel({
       };
     let value: AnalysisJob;
     try {
+      if (kind === "transcription" && !pending.current.previewId) {
+        pending.current.previewId = (
+          await prepareRoute(
+            {
+              project_id: project.project_id,
+              revision: pending.current.revision,
+            },
+            "transcription",
+            {
+              providerId: profile?.provider_id,
+              allowRemote: consent,
+            },
+          )
+        ).id;
+      }
       value = await api<AnalysisJob>(
         `/projects/${project.project_id}/timeline/analysis`,
         {
           ...body,
           base_revision: pending.current.revision,
           request_id: pending.current.id,
+          ...(pending.current.previewId
+            ? { route_preview_id: pending.current.previewId }
+            : {}),
         },
       );
     } catch (failure) {
-      if (failure instanceof ApiError && failure.code === "REVISION_CONFLICT")
+      if (
+        failure instanceof ApiError &&
+        ["REVISION_CONFLICT", "ROUTE_PREVIEW_STALE"].includes(failure.code)
+      )
         pending.current = null;
       if (!(failure instanceof ApiError))
         setError("提交结果暂未确认，可用同一请求重试或重新读取最近分析。");

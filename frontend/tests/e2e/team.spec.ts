@@ -221,6 +221,27 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as archive:
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBeTruthy();
+    await page.getByRole("button", { name: "运行概览", exact: true }).click();
+    const nodes = page.getByRole("region", { name: "执行节点", exact: true });
+    await expect(
+      nodes.getByRole("heading", { name: "AFDS worker", exact: true }),
+    ).toBeVisible();
+    await nodes
+      .getByRole("button", { name: "排空 AFDS worker", exact: true })
+      .click();
+    await expect(nodes.getByText("排空中", { exact: true })).toBeVisible();
+    await nodes
+      .getByRole("button", { name: "恢复接单 AFDS worker", exact: true })
+      .click();
+    await expect(nodes.getByText("在线", { exact: true })).toBeVisible();
+    await nodes.screenshot({ path: "../data/worker-nodes-desktop.png" });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect
+      .poll(() =>
+        page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      )
+      .toBe(true);
+    await nodes.screenshot({ path: "../data/worker-nodes-mobile.png" });
     await page.getByRole("button", { name: "退出登录", exact: true }).click();
     await expect(
       page.getByRole("button", { name: "登录", exact: true }),

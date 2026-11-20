@@ -23,6 +23,9 @@ def team(dialect_database):
     settings = database.settings
     settings.mode = "team"
     settings.cors_origins = "https://testserver"
+    from app.worker_registry import WorkerRegistry
+
+    WorkerRegistry(database).initialize_store()
     identity = IdentityService(database)
     accounts = {
         name: identity.create_user(
@@ -484,3 +487,27 @@ def test_owner_can_explicitly_retry_a_revoked_creators_safe_task(team):
     assert saved["state"] == "completed", saved
     assert saved["actor_id"] == team.accounts["editor"]["id"]
     assert saved["execution_actor_id"] == team.accounts["owner"]["id"]
+
+
+def test_worker_registry_management_requires_global_administrator(team):
+    from app.worker_registry import WorkerRegistry
+
+    WorkerRegistry(team.database).register(
+        {
+            "id": "demo-global-node",
+            "label": "DEMO global worker",
+            "operations": ["check_production"],
+            "slots": 2,
+        }
+    )
+    assert team.as_user("editor").get("/api/v1/system/workers").status_code == 403
+    owner = team.as_user("owner")
+    listed = owner.get("/api/v1/system/workers")
+    assert listed.status_code == 200
+    assert listed.json()[0]["slots"] == 2
+    denied = team.as_user("editor").post(
+        "/api/v1/system/workers/demo-global-node/drain", json={"draining": True}
+    )
+    assert denied.status_code == 403
+    drained = owner.post("/api/v1/system/workers/demo-global-node/drain", json={"draining": True})
+    assert drained.status_code == 200 and drained.json()["draining"]

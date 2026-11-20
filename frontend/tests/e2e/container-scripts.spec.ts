@@ -1,6 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 
+test.skip(
+  process.env.AFDS_TEST_DOCKER !== "1",
+  "Enable AFDS_TEST_DOCKER=1 for Docker-dependent browser acceptance",
+);
+
 test("approves isolated scripts on desktop and mobile, downloads output and cancels a running container", async ({
   page,
 }, testInfo) => {

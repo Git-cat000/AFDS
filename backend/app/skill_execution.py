@@ -24,15 +24,50 @@ from app.storage import contained, file_hash
 OPERATIONS = {"check_production", "run_skill_script"}
 
 
-def execution_preview(settings, body):
+def controller_policy(database, timeout_seconds):
+    from app.worker_registry import WorkerRegistry, eligible
+
+    for node in WorkerRegistry(database).list():
+        for capability in sorted(node["capabilities"]):
+            if not capability.startswith("sandbox:"):
+                continue
+            try:
+                image, version = capability.removeprefix("sandbox:").rsplit(":", 1)
+                policy = skill_sandbox.ScriptExecutionPolicy(
+                    image_id=image, policy_version=version, timeout_seconds=timeout_seconds
+                )
+            except ValueError:
+                continue
+            job = {
+                "operation": "run_skill_script",
+                "request": {"execution_mode": "container", "execution_policy": policy.model_dump()},
+            }
+            if eligible(node, job):
+                return policy
+    raise DomainError("SANDBOX_CONTROLLER_UNAVAILABLE", "Start a registered script controller", 422)
+
+
+def approved_policy(database, timeout_seconds):
+    try:
+        return controller_policy(database, timeout_seconds)
+    except DomainError:
+        if database.settings.mode == "team":
+            raise
+        # Local workspaces retain direct Docker execution when no nodes are registered.
+        with database.engine.connect() as connection:
+            registered = connection.execute(select(db.worker_nodes.c.id).limit(1)).first()
+        if registered:
+            raise
+        return skill_sandbox.execution_policy(database.settings, timeout_seconds)
+
+
+def execution_preview(database, body):
     runtime = interpreter(body.script_path)
     available = bool(runtime["executable"])
     problem = None
     if body.execution_mode == "container":
         try:
-            policy = skill_sandbox.execution_policy(settings, body.timeout_seconds).model_dump(
-                mode="json"
-            )
+            policy = approved_policy(database, body.timeout_seconds).model_dump(mode="json")
             available = True
         except DomainError as error:
             policy, available = None, False
@@ -177,7 +212,7 @@ class SkillExecution:
             raise DomainError(
                 "SCRIPT_ENCODING", "Use UTF-8 script source for review", 422
             ) from error
-        policy, runtime = execution_preview(self.database.settings, body)
+        policy, runtime = execution_preview(self.database, body)
         with self.database.transaction() as connection:
             apr = self.engine.load(connection, project_id)
             self.engine.check_revision(apr, body.base_revision)
@@ -229,9 +264,7 @@ class SkillExecution:
             and proposal.get("request", {}).get("execution_mode") == "container"
         ):
             try:
-                policy = skill_sandbox.execution_policy(
-                    self.database.settings, proposal["request"]["timeout_seconds"]
-                )
+                policy = approved_policy(self.database, proposal["request"]["timeout_seconds"])
             except DomainError as error:
                 policy_error = error
         with self.database.transaction() as connection:
@@ -457,8 +490,20 @@ class SkillExecution:
                 .mappings()
                 .all()
             )
+        controller, checked_controller = None, False
         for row in rows:
             handle = row["payload"].get("sandbox_run", {})
+            if handle.get("controller_id"):
+                if not checked_controller:
+                    try:
+                        controller = skill_sandbox.controller_identity()
+                    except DomainError:
+                        controller = None
+                    checked_controller = True
+                if handle["controller_id"] != controller:
+                    continue
+            elif self.database.settings.mode == "team":
+                continue
             if not handle.get("run_id") or not skill_sandbox.cleanup_run(handle["run_id"]):
                 continue
             if row["state"] not in TERMINAL or (

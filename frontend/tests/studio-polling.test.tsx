@@ -250,6 +250,7 @@ it("refreshes the source revision before generating footage after a recent edit"
         shot_ids: ["shot"],
         provider_id: "mock-video-local",
         allow_remote: false,
+        request_id: expect.any(String),
       },
     }),
   );

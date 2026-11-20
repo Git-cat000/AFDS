@@ -443,7 +443,8 @@ class ContinuityService:
 
     def semantic_propose(self, project_id, body):
         from app.budget import BudgetService
-        from app.provider_settings import ProviderStore
+        from app.routing_schema import RoutingRequirements
+        from app.routing_service import RoutingService
 
         config, charge_id = None, None
         if body.mode == "llm":
@@ -453,18 +454,40 @@ class ContinuityService:
                     "Approve selected content sharing and provider costs",
                     409,
                 )
-            store = ProviderStore(self.database)
-            snapshot = store.snapshot("openai-llm", "storyboard")
-            config = store.runtime("llm", snapshot["revision"])
+        routing = RoutingService(self.database)
+        selected = None
         budget = BudgetService(self.database)
         with self.database.transaction() as connection:
             apr = self.engine.load(connection, project_id)
+            identity, reference, prior = routing.direct_request(connection, apr, "semantic", body)
+            if prior:
+                return prior
             self.engine.check_revision(apr, body.base_revision)
             shots = [find(apr["shots"], sid) for sid in body.shot_ids]
             if any(s["status"] == "archived" for s in shots):
                 raise DomainError("SHOT_ARCHIVED", "Select active shots", 409)
+            if body.mode == "llm":
+                provider_id = body.provider_id or (
+                    "auto" if "storyboard" in apr.get("routing_policies", {}) else "openai-llm"
+                )
+                selected = routing.choose(
+                    connection,
+                    apr,
+                    "storyboard",
+                    provider_id=provider_id,
+                    allow_remote=body.allow_remote,
+                    preview_id=body.route_preview_id,
+                    requirements=RoutingRequirements(remote_only=True),
+                )
+                if selected.get("is_mock"):
+                    raise DomainError(
+                        "CAPABILITY_UNSUPPORTED",
+                        "Semantic model editing needs an LLM connection",
+                        422,
+                    )
+                config = routing.runtime(selected, project_id)
             if config:
-                charge_id = budget.reserve(connection, apr, f"semantic:{new_id()}", config)
+                charge_id = routing.reserve(connection, apr, reference, selected)
                 budget.begin_submission(connection, charge_id, config["timeout_seconds"])
                 self.engine.approve(
                     connection,
@@ -508,6 +531,9 @@ class ContinuityService:
             plan = {
                 "id": new_id(),
                 "type": "semantic_edit",
+                "request_id": identity,
+                "input": body.model_dump(mode="json"),
+                **({"model_route": selected["route"]} if selected else {}),
                 "state": "proposed",
                 "base_revision": current["revision"],
                 "provider_id": "openai-llm" if config else "deterministic-fields",

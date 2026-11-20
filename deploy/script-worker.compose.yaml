@@ -1,0 +1,53 @@
+name: afds-scripts
+
+services:
+  controller:
+    image: ${AFDS_SCRIPT_CONTROLLER_IMAGE:?Set the trusted script controller image identity}
+    pull_policy: never
+    command: [python, -m, app.execution.worker, --node-id, "${AFDS_SCRIPT_NODE_ID:-scripts-1}", --label, Scripts, --slots, "1", --operations, run_skill_script]
+    environment:
+      AFDS_MODE: team
+      AFDS_PRODUCTION: "true"
+      AFDS_PUBLIC_ORIGIN: ${AFDS_PUBLIC_ORIGIN:?Set HTTPS origin}
+      AFDS_TRUSTED_PROXY: ${AFDS_PROXY_IP:-172.31.250.10}
+      AFDS_DATABASE_URL_FILE: /run/secrets/database_url
+      AFDS_DATA_DIR: ${AFDS_SHARED_STORE:?Set absolute shared store path}
+      AFDS_WORKER_CACHE_DIR: ${AFDS_SCRIPT_CACHE:?Set absolute host script cache path}
+      AFDS_SANDBOX_IMAGE_ID: ${AFDS_SANDBOX_IMAGE_ID:?Set approved sandbox image identity}
+    secrets: [database_url]
+    volumes:
+      - type: bind
+        source: ${AFDS_SHARED_STORE}
+        target: ${AFDS_SHARED_STORE}
+      - type: bind
+        source: ${AFDS_SCRIPT_CACHE}
+        target: ${AFDS_SCRIPT_CACHE}
+      - type: bind
+        source: ${AFDS_DOCKER_SOCKET:-/var/run/docker.sock}
+        target: /var/run/docker.sock
+    group_add: ["${AFDS_DOCKER_GID:?Set host Docker socket group ID}"]
+    networks: [afds]
+    read_only: true
+    tmpfs: [/tmp:rw,nosuid,nodev,size=134217728]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 1g
+    stop_grace_period: 90s
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -m, app.deployment, worker-health, --node-id, "${AFDS_SCRIPT_NODE_ID:-scripts-1}"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+networks:
+  afds:
+    external: true
+    name: ${AFDS_NETWORK:-afds_internal}
+secrets:
+  database_url: {file: "${AFDS_DATABASE_URL_SECRET:?Set private database URL file}"}
