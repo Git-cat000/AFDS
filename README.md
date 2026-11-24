@@ -1,5 +1,7 @@
 # AFDS · AI Film Direction System
 
+**AFDS Studio 1.0 for Windows** 提供安装程序和本机启动窗口。Windows 10 / 11 x64 用户可从 [GitHub Release](https://github.com/Git-cat000/AFDS/releases/tag/v1.0.0) 下载，安装选项和构建方法见 [Windows 指南](docs/WINDOWS.md)。
+
 本地影视工程工作室，支持可配置的 LLM、视频、图像和语音服务。通过分镜、持久任务队列、版本记录和 FFmpeg 完成从创作到 MP4 的流程。内置 Mock 模式可离线生成带 `DEMO / MOCK` 标识的测试视频。
 
 v0.8 增加服务端画布保存、多视频叠加与画中画、转场、节拍检测、转写候选和剪辑交换；团队版提供项目角色、实时画布协作、操作级撤销及节点能力管理。模型候选支持固定配置版本、项目授权、预算排序和可追踪的重试。另提供部署模板与离线系统备份恢复；本轮容器冷启动、新增 PostgreSQL 迁移及跨环境节点验收暂缓，真实模型质量和账单仍需配置服务后验证。详见 [团队使用](docs/TEAM.md)、[模型路由](docs/MODEL_ROUTING.md)与[部署恢复](docs/DEPLOYMENT.md)。

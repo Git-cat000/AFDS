@@ -1,4 +1,5 @@
 import ipaddress
+import os
 import shutil
 from pathlib import Path
 from typing import Literal
@@ -31,6 +32,15 @@ class Settings(BaseSettings):
     secure_cookies: bool = True
     session_hours: int = 8
     worker_cache_dir: Path | None = None
+
+    @classmethod
+    def settings_customise_sources(
+        cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
+    ):
+        sources = (init_settings, env_settings)
+        if os.environ.get("AFDS_DESKTOP_RUNTIME") != "1":
+            sources += (dotenv_settings,)
+        return (*sources, file_secret_settings)
 
     def model_post_init(self, context):
         if self.database_url_file is not None:

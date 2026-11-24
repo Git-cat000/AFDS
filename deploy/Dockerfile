@@ -2,7 +2,7 @@ ARG AFDS_NGINX_IMAGE=registry-1.docker.io/library/nginx:stable-alpine
 ARG AFDS_DOCKER_CLI_IMAGE=registry-1.docker.io/library/docker:cli
 FROM registry-1.docker.io/library/python@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df AS backend
 
-ARG AFDS_APP_VERSION=0.8.0
+ARG AFDS_APP_VERSION=1.0.0
 LABEL io.afds.runtime="afds-worker-v1" \
       org.opencontainers.image.version="${AFDS_APP_VERSION}"
 ENV PYTHONDONTWRITEBYTECODE=1 \

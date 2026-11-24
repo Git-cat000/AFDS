@@ -5,21 +5,18 @@ import json
 import sys
 from pathlib import Path
 
-from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.config import ROOT, Settings
-from app.db import Database
+from app.config import Settings
+from app.db import Database, migration_config
 from app.errors import DomainError
 from app.worker_registry import WorkerRegistry
 
 
 def migration_head():
-    config = Config(str(ROOT / "backend/alembic.ini"))
-    config.set_main_option("script_location", str(ROOT / "backend/migrations"))
-    return ScriptDirectory.from_config(config).get_current_head()
+    return ScriptDirectory.from_config(migration_config()).get_current_head()
 
 
 def readiness(database):

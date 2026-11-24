@@ -9,7 +9,7 @@
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #19191c;
+  background: #1a1b1e;
 }
 .workbench-tools button {
   font-size: 12px;
@@ -17,8 +17,9 @@
   background: transparent;
 }
 .workbench-tools button[aria-pressed="true"] {
-  background: #373144;
-  color: #e3dcff;
+  background: var(--gold-wash);
+  border-color: #5a472e;
+  color: #ffdb9e;
 }
 .creation-columns.with-tool {
   grid-template-columns: minmax(320px, 1fr) minmax(380px, 600px);
@@ -36,7 +37,7 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  background: #242428;
+  background: var(--surface-raised);
   padding: 14px 16px;
   display: flex;
   align-items: center;
@@ -53,6 +54,9 @@
 }
 .workbench-dock .page {
   padding: 20px 16px;
+}
+.workbench-dock > .timeline-editor {
+  padding: 16px;
 }
 .workbench-dock .director.panel {
   border: 0;
@@ -115,20 +119,6 @@
     flex-shrink: 0;
   }
 }
-.studio-heading {
-  padding: 22px 24px;
-}
-.studio-heading h1 {
-  font-size: 25px;
-}
-.dashboard h1 {
-  font-size: 34px;
-  line-height: 1.3;
-}
-.studio-layout {
-  display: block;
-  padding: 0 24px 24px;
-}
 .director.panel {
   padding: 16px 20px;
   margin-bottom: 20px;
@@ -177,7 +167,7 @@
   border: 1px solid var(--line);
   border-radius: 9px;
   gap: 2px;
-  background: #171719;
+  background: var(--dark);
 }
 .segmented button {
   border: 0;
@@ -185,8 +175,8 @@
   padding: 5px 12px;
 }
 .segmented button[aria-pressed="true"] {
-  background: #38383d;
-  color: #fff;
+  background: var(--gold-wash);
+  color: #ffdb9e;
 }
 .creation-columns {
   display: grid;
@@ -203,10 +193,10 @@
   height: min(70vh, 860px);
   overflow: hidden;
   position: relative;
-  border: 1px solid #313135;
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background-color: #151517;
-  background-image: radial-gradient(#37373b 1px, transparent 1px);
+  background-color: #151619;
+  background-image: radial-gradient(#3a3939 1px, transparent 1px);
   background-size: 22px 22px;
 }
 .shot-canvas.canvas {
@@ -227,27 +217,27 @@
   pointer-events: auto;
   position: absolute;
   width: 270px;
-  background: #202023;
-  border: 1px solid #3b3b41;
+  background: var(--panel);
+  border: 1px solid #414044;
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 8px 20px #0003;
 }
 .canvas-shot.selected {
-  border-color: #b6afff;
+  border-color: var(--gold);
   box-shadow:
-    0 0 0 1px #b6afff40,
+    0 0 0 1px #f2c47d40,
     0 8px 24px #0004;
 }
 .canvas-shot .node-handle {
   touch-action: none;
   border: 0;
-  background: #27272b;
+  background: var(--surface-raised);
   padding: 9px 12px;
   width: 100%;
   justify-content: space-between;
   border-radius: 0;
-  color: #bcbcc6;
+  color: #cac4bb;
   font-size: 11px;
   cursor: move;
 }
@@ -264,7 +254,7 @@
 .node-poster {
   position: relative;
   height: 150px;
-  background: #19191c;
+  background: #161719;
 }
 .node-poster img {
   width: 100%;
@@ -277,7 +267,7 @@
   gap: 12px;
   align-items: center;
   justify-content: center;
-  color: #777781;
+  color: var(--muted);
   font-size: 12px;
 }
 .node-description {
@@ -285,11 +275,11 @@
 }
 .node-description strong {
   display: block;
-  color: #eeeef3;
+  color: #f1eeea;
   margin-bottom: 8px;
 }
 .node-description p {
-  color: #a0a0ac;
+  color: var(--muted);
   font-size: 12px;
   margin: 8px 0 0;
   display: -webkit-box;
@@ -305,7 +295,7 @@
   gap: 10px;
   padding: 0 12px 10px;
   font-size: 11px;
-  color: #9999a4;
+  color: var(--muted);
 }
 .node-references {
   border-top: 1px solid var(--line);
@@ -554,9 +544,6 @@
   }
 }
 @media (max-width: 600px) {
-  .studio-layout {
-    padding: 0 14px 20px;
-  }
   .canvas-toolbar small {
     width: 100%;
     margin-bottom: 5px;

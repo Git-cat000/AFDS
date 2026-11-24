@@ -7,6 +7,7 @@ import {
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Activity,
   ArrowDown,
   ArrowLeft,
   ArrowRight,
@@ -17,15 +18,18 @@ import {
   Download,
   Film,
   FolderOpen,
+  Images,
   Layers,
   Lock,
   Play,
+  Plus,
   RefreshCw,
   Send,
   Settings2,
   Unlock,
   X,
 } from "lucide-react";
+import { version } from "../package.json";
 import { api, ApiError, mediaUrl } from "./api";
 import { framesToTime, statusLabel } from "./format";
 import { useStudio } from "./store";
@@ -318,6 +322,7 @@ export function App() {
 
   const visibleError =
     error || project.error?.message || projects.error?.message || "";
+  const isHome = !projectId && tab !== "providers" && tab !== "operations";
   return (
     <div className={`app-shell session-${session.mode}`}>
       <aside className="rail">
@@ -326,12 +331,15 @@ export function App() {
           onClick={() => selectProject(null)}
           aria-label="返回项目列表"
         >
-          <Clapperboard />
-          <span>AFDS</span>
+          <span className="brand-mark">
+            <Clapperboard size={21} />
+          </span>
+          <span className="brand-name">AFDS</span>
         </button>
-        <span className="rail-label">WORKSPACE</span>
+        <span className="rail-label">工作空间</span>
         <button
-          className={!projectId ? "nav active" : "nav"}
+          className="nav"
+          aria-current={isHome ? "page" : undefined}
           onClick={() => selectProject(null)}
         >
           <FolderOpen size={18} />
@@ -340,42 +348,50 @@ export function App() {
         {projectId && (
           <>
             <button
-              className={`nav ${["storyboard", "script"].includes(tab) ? "active" : ""}`}
+              className="nav"
+              aria-current={
+                ["storyboard", "script"].includes(tab) ? "page" : undefined
+              }
               onClick={() => setTab("storyboard")}
             >
               <Film size={18} />
               分镜工作室
             </button>
             <button
-              className={`nav ${tab === "continuity" ? "active" : ""}`}
+              className="nav"
+              aria-current={tab === "continuity" ? "page" : undefined}
               onClick={() => setTab("continuity")}
             >
               <Clapperboard size={18} />
               角色与连续性
             </button>
             <button
-              className={`nav ${tab === "review" ? "active" : ""}`}
+              className="nav"
+              aria-current={tab === "review" ? "page" : undefined}
               onClick={() => setTab("review")}
             >
               <Check size={18} />
               审片与证据
             </button>
             <button
-              className={`nav ${tab === "timeline" ? "active" : ""}`}
+              className="nav"
+              aria-current={tab === "timeline" ? "page" : undefined}
               onClick={() => setTab("timeline")}
             >
               <Layers size={18} />
               音画时间轴
             </button>
             <button
-              className={`nav ${tab === "assets" ? "active" : ""}`}
+              className="nav"
+              aria-current={tab === "assets" ? "page" : undefined}
               onClick={() => setTab("assets")}
             >
-              <Layers size={18} />
+              <Images size={18} />
               素材库
             </button>
             <button
-              className={`nav ${tab === "jobs" ? "active" : ""}`}
+              className="nav"
+              aria-current={tab === "jobs" ? "page" : undefined}
               onClick={() => setTab("jobs")}
             >
               <RefreshCw size={18} />
@@ -383,40 +399,54 @@ export function App() {
             </button>
           </>
         )}
+        <span className="rail-label rail-section">工具</span>
         {canAdmin && (
-          <button
-            className={`nav ${tab === "operations" ? "active" : ""}`}
-            onClick={() => setTab("operations")}
-          >
-            <RefreshCw size={18} />
-            运行概览
-          </button>
-        )}
-        {canAdmin && (
-          <button
-            className={`nav ${tab === "providers" ? "active" : ""}`}
-            onClick={() => setTab("providers")}
-          >
-            <Settings2 size={18} />
-            模型与工具
-          </button>
+          <>
+            <button
+              className="nav"
+              aria-current={tab === "operations" ? "page" : undefined}
+              onClick={() => setTab("operations")}
+            >
+              <Activity size={18} />
+              运行概览
+            </button>
+            <button
+              className="nav"
+              aria-current={tab === "providers" ? "page" : undefined}
+              onClick={() => setTab("providers")}
+            >
+              <Settings2 size={18} />
+              模型与工具
+            </button>
+          </>
         )}
         <button
-          className={`nav ${skillsOpen ? "active" : ""}`}
+          className="nav"
+          aria-expanded={skillsOpen}
           onClick={() => setSkillsOpen(true)}
         >
           <BookOpen size={18} />
           技能与脚本
         </button>
         <div className="rail-bottom">
-          <span className="online-dot" />
-          本地工作区<small>v0.8.0 · FILM STUDIO</small>
+          <span>
+            <span className="online-dot" />
+            {session.mode === "local" ? "本地工作区" : "团队工作区"}
+          </span>
+          <small>v{version}</small>
         </div>
       </aside>
       <main className="workspace">
         <header className="topbar">
           <div className="breadcrumb">
-            工作空间 <span>/</span> {apr?.title || "项目总览"}
+            工作空间 <span aria-hidden="true">/</span>{" "}
+            <strong>
+              {tab === "providers"
+                ? "模型与工具"
+                : tab === "operations"
+                  ? "运行概览"
+                  : apr?.title || "项目总览"}
+            </strong>
           </div>
           <div className="topbar-actions">
             {session.mode === "team" && projectId && (
@@ -467,57 +497,60 @@ export function App() {
           <OperationsDashboard projectId={projectId || undefined} />
         ) : !projectId ? (
           <section className="page dashboard">
-            <h1>创作工作区</h1>
-            <p className="muted">从故事、参考图到成片。</p>
+            <header className="dashboard-hero">
+              <h1>创作工作区</h1>
+              <p>创建影片项目，或继续编辑已有工程。</p>
+            </header>
             <div className="dashboard-grid">
-              <div className="project-start">
-                <form className="panel create-project" onSubmit={create}>
-                  <h2>开始新的创作</h2>
-                  <label>
-                    项目名称
-                    <input
-                      aria-label="项目名称"
-                      name="title"
-                      required
-                      maxLength={200}
-                      placeholder="例如，雨夜告别"
-                    />
-                  </label>
-                  <label>
-                    创作简述
-                    <textarea
-                      aria-label="创作简述"
-                      name="brief"
-                      rows={5}
-                      maxLength={10000}
-                      placeholder="故事发生在哪里？谁在场？你希望观众感受到什么？"
-                    />
-                  </label>
-                  <div className="format-note">
-                    <Film size={16} />
-                    1280 × 720 · 24 fps · 四镜头演示
-                  </div>
-                  <button className="primary" disabled={busy}>
-                    创建项目 <ArrowRight size={16} />
-                  </button>
-                </form>
-                <BackupRestorePanel
-                  onQueued={(job) => {
-                    selectProject(job.project_id);
-                    setTab("jobs");
-                    void queryClient.invalidateQueries();
-                  }}
-                />
-              </div>
-              <section className="recent">
-                <h2>最近的项目</h2>
+              <form className="panel create-project" onSubmit={create}>
+                <h2>
+                  <Plus size={19} /> 开始新的创作
+                </h2>
+                <label>
+                  项目名称
+                  <input
+                    aria-label="项目名称"
+                    name="title"
+                    required
+                    maxLength={200}
+                    placeholder="例如，雨夜告别"
+                  />
+                </label>
+                <label>
+                  创作简述
+                  <textarea
+                    aria-label="创作简述"
+                    name="brief"
+                    rows={5}
+                    maxLength={10000}
+                    placeholder="故事发生在哪里？谁在场？你希望观众感受到什么？"
+                  />
+                </label>
+                <div className="format-note">
+                  <Film size={16} />
+                  1280 × 720 · 24 fps · 四镜头演示
+                </div>
+                <button className="primary" disabled={busy}>
+                  创建项目 <ArrowRight size={16} />
+                </button>
+              </form>
+              <section
+                className="panel recent"
+                aria-labelledby="recent-heading"
+              >
+                <h2 id="recent-heading">
+                  <FolderOpen size={19} /> 最近的项目
+                </h2>
                 {projects.isLoading && (
-                  <p className="muted">正在读取本地项目…</p>
+                  <p className="recent-status muted" role="status">
+                    正在读取项目…
+                  </p>
                 )}
                 {projects.data?.length === 0 && (
                   <div className="empty-small">
-                    <FolderOpen size={32} />
-                    <p>第一个故事，从这里开始。</p>
+                    <Film size={28} />
+                    <p>暂无项目</p>
+                    <small>创建项目或从工程包恢复。</small>
                   </div>
                 )}
                 {projects.data?.map((p) => (
@@ -527,7 +560,7 @@ export function App() {
                     onClick={() => selectProject(p.project_id)}
                   >
                     <div className="project-icon">
-                      <Film size={24} />
+                      <Film size={19} />
                     </div>
                     <div>
                       <strong>{p.title}</strong>
@@ -539,6 +572,13 @@ export function App() {
                   </button>
                 ))}
               </section>
+              <BackupRestorePanel
+                onQueued={(job) => {
+                  selectProject(job.project_id);
+                  setTab("jobs");
+                  void queryClient.invalidateQueries();
+                }}
+              />
             </div>
           </section>
         ) : !apr ? (

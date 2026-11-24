@@ -21,14 +21,15 @@
 .timeline-duration {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  color: #638379;
-  font-size: 13px;
+  color: var(--gold);
+  font: 12px var(--mono);
 }
 .timeline-lanes {
   padding: 16px;
   display: grid;
   gap: 8px;
   overflow: hidden;
+  background: #1a1b1e;
 }
 .timeline-lane {
   display: grid;
@@ -38,15 +39,23 @@
 }
 .timeline-lane > strong {
   font-size: 12px;
+  color: #d5cec4;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .timeline-lane-content {
   position: relative;
-  height: 36px;
+  height: 38px;
+  border: 1px solid var(--line);
   border-radius: 5px;
-  background: rgba(112, 135, 122, 0.08);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 calc(10% - 1px),
+      #ffffff12 calc(10% - 1px) 10%
+    ),
+    var(--dark);
 }
 .timeline-clip {
   position: absolute;
@@ -62,16 +71,19 @@
   text-align: left;
 }
 .timeline-clip.video {
-  background: #476d64;
-  color: #fff;
+  background: #3b465e;
+  color: #f1f3fc;
 }
 .timeline-clip.audio {
-  background: #dfebdd;
-  color: #23483d;
+  background: #304c42;
+  color: #e1f4e7;
+}
+.timeline-clip.audio:hover:not(:disabled) {
+  background: #426758;
 }
 .timeline-clip.caption {
-  background: #e6d4ad;
-  color: #5f4a24;
+  background: #5e482c;
+  color: #ffe4ac;
 }
 .timeline-clip.muted-clip {
   opacity: 0.45;
@@ -79,7 +91,7 @@
 .timeline-anchor {
   position: absolute;
   top: -7px;
-  color: #b67f2f;
+  color: var(--gold);
   font-size: 12px;
   transform: translateX(-50%);
   z-index: 1;
@@ -123,7 +135,7 @@
   gap: 12px;
 }
 .timeline-divider {
-  border-top: 1px solid rgba(107, 127, 111, 0.18);
+  border-top: 1px solid var(--line);
   margin-block: 4px;
 }
 .timeline-track-heading {
@@ -144,7 +156,7 @@
   gap: 5px;
   align-items: center;
   padding-top: 8px;
-  border-top: 1px solid rgba(107, 127, 111, 0.15);
+  border-top: 1px solid var(--line);
 }
 .timeline-item-list span {
   flex: 1 1 100%;
@@ -162,7 +174,7 @@
 }
 .timeline-timing-preview {
   padding: 14px;
-  background: rgba(106, 139, 114, 0.1);
+  background: #242528;
   border-radius: 6px;
   font-size: 13px;
 }
@@ -277,7 +289,7 @@
   background: #09090b;
 }
 .composition-plan {
-  border-left: 2px solid #b8acf2;
+  border-left: 2px solid var(--gold);
   padding-left: 12px;
 }
 .analysis-candidates {

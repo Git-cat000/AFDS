@@ -1,9 +1,3 @@
-.project-start {
-  display: grid;
-  gap: 20px;
-  align-content: start;
-  min-width: 0;
-}
 .restore-panel {
   display: grid;
   gap: 15px;

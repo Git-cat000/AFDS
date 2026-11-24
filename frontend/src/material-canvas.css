@@ -24,12 +24,12 @@
   z-index: 2;
   width: 13px;
   height: 13px;
-  background: #bdb2ff;
+  background: #b9b4c7;
   border: 2px solid #29262e;
   top: 74px;
 }
 .material-node .react-flow__handle:focus-visible {
-  outline: 3px solid #eee6ff;
+  outline: 3px solid var(--gold);
 }
 .material-node .react-flow__handle[aria-pressed="true"] {
   background: #f5ce80;
@@ -165,10 +165,10 @@
 }
 .material-board .react-flow {
   --xy-edge-stroke-default: #aaa1c1;
-  --xy-edge-stroke-selected-default: #e7d8ff;
+  --xy-edge-stroke-selected-default: var(--gold);
   --xy-edge-stroke-width-default: 2;
   --xy-node-boxshadow-selected-default: none;
-  --xy-background-color-default: #151517;
+  --xy-background-color-default: #151619;
   --xy-edge-label-color-default: #e4dcf0;
   --xy-edge-label-background-color-default: #292530;
 }
@@ -183,7 +183,7 @@
   border-radius: 10px;
 }
 .material-board .react-flow__node:focus-visible {
-  outline: 2px solid #e1d6ff;
+  outline: 2px solid var(--gold);
 }
 .material-board .react-flow__minimap {
   width: 120px;

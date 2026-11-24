@@ -318,6 +318,16 @@ def lock_named_resource(connection, name):
         connection.execute(select(func.pg_advisory_xact_lock(identity)))
 
 
+def migration_config():
+    backend = ROOT / "backend"
+    config = Config(str(backend / "alembic.ini"))
+    config.set_main_option("script_location", str(backend / "migrations").replace("%", "%%"))
+    # Programmatic callers have already imported app. Avoid expanding %(here)s
+    # in prepend_sys_path, which breaks on Windows paths containing %.
+    config.set_main_option("prepend_sys_path", "")
+    return config
+
+
 class Database:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -340,8 +350,7 @@ class Database:
                 connection.execute("PRAGMA busy_timeout=30000")
 
     def migrate(self):
-        config = Config(str(ROOT / "backend" / "alembic.ini"))
-        config.set_main_option("script_location", str(ROOT / "backend" / "migrations"))
+        config = migration_config()
         config.set_main_option("sqlalchemy.url", self.settings.database_url.replace("%", "%%"))
         command.upgrade(config, "head")
 

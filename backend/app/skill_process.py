@@ -25,6 +25,14 @@ if os.read(0, 1) != b"\\x01":
     sys.exit(125)
 sys.exit(subprocess.call(sys.argv[1:]))
 """
+RUN_PYTHON_FILE = """
+import runpy
+import sys
+from pathlib import Path
+sys.argv = sys.argv[1:]
+sys.path.insert(0, str(Path(sys.argv[0]).resolve().parent))
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
 
 
 def log_text(value):
@@ -40,7 +48,11 @@ def log_text(value):
 def interpreter(path):
     suffix = Path(path).suffix.lower()
     if suffix == ".py":
-        return {"name": "Python", "executable": sys.executable, "options": ["-B"]}
+        options = ["-B"]
+        # Windows embeddable Python's ._pth omits the directory of an approved script.
+        if sys.flags.isolated:
+            options.extend(["-c", RUN_PYTHON_FILE])
+        return {"name": "Python", "executable": sys.executable, "options": options}
     if suffix in {".js", ".mjs", ".cjs"}:
         return {"name": "Node.js", "executable": shutil.which("node"), "options": []}
     if suffix == ".ps1":
